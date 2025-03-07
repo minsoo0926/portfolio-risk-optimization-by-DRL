@@ -49,18 +49,18 @@ def generate_scenario(n:int, seed = 42):
             return generate_scenario(10)
 
     # Drop any columns that are duplicated due to the index or unnamed columns
-    concatenated_df = concatenated_df.loc[:, ~concatenated_df.columns.duplicated()]
+    # concatenated_df = concatenated_df.loc[:, ~concatenated_df.columns.duplicated()]
 
     # Filter the data to leave only consecutive one year data
     # Assuming the data is sorted by date and the 'Date' column is present
     concatenated_df = concatenated_df.reset_index()
-    
-    # Randomly select a year between 2008 and 2023
-    random_year = random.randint(2008, 2023)
-    
+    # Randomly select a start date between 2009-01-01 and 2022-12-31
+    start_date = pd.to_datetime(random.randint(pd.Timestamp('2009-01-01').value, pd.Timestamp('2022-12-31').value))
+    # Calculate the end date to be one year after the start date
+    end_date = start_date + pd.DateOffset(years=1) - pd.DateOffset(days=1)
     # Define the start and end date for the randomly selected year
-    start_date = f'{random_year}-01-01'
-    end_date = f'{random_year}-12-31'
+    # start_date = f'{random_year}-01-01'
+    # end_date = f'{random_year}-12-31'
 
     # Filter the DataFrame for the specified one-year period
     one_year_data = concatenated_df.loc[(concatenated_df['Date'] >= start_date) & (concatenated_df['Date'] <= end_date)]
