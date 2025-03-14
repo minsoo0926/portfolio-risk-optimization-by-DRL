@@ -1,0 +1,7 @@
+[2025-03-12 22:11:01] 반복 #1 에러: Observation spaces do not match: Box(-inf, inf, (52,), float32) != Box(-inf, inf, (52,), float32)
+[2025-03-12 22:12:02] 반복 #1 에러: Observation spaces do not match: Box(-inf, inf, (52,), float32) != Box(-inf, inf, (52,), float32)
+[2025-03-12 22:13:45] 반복 #1 에러: The algorithm only supports (<class 'gymnasium.spaces.box.Box'>, <class 'gymnasium.spaces.discrete.Discrete'>, <class 'gymnasium.spaces.multi_discrete.MultiDiscrete'>, <class 'gymnasium.spaces.multi_binary.MultiBinary'>) as action spaces but Box(-1.0, 1.0, (10,), float32) was provided
+[2025-03-13 02:53:48] 반복 #139 에러: Could not pickle object as excessively deep recursion required.
+[2025-03-13 09:52:18] 반복 #36 에러: Could not pickle object as excessively deep recursion required.
+[2025-03-13 14:26:54] 반복 #176 에러: Could not pickle object as excessively deep recursion required.
+[2025-03-13 19:02:01] 반복 #316 에러: Could not pickle object as excessively deep recursion required.

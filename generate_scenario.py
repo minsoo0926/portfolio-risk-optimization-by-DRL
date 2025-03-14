@@ -86,8 +86,45 @@ def generate_scenario(n:int, seed = 42):
     if one_year_data.isna().any().any():
         return generate_scenario(10)
     
-    # Save the data to CSV if no NA values are present
-    # one_year_data.to_csv(f"./data/train_set/{k}.csv", index=False)
+    # 데이터 정규화/표준화를 위한 코드 추가
+    if not one_year_data.empty:
+        # 주식 데이터 스케일 조정
+        for i in range(1, n+1):
+            # return과 ma는 *100
+            return_col = f'S{i}_return'
+            ma_col = f'S{i}_ma'
+            one_year_data[return_col] *= 100
+            one_year_data[ma_col] *= 100
+            
+            # vol도 *100
+            vol_col = f'S{i}_vol'
+            one_year_data[vol_col] *= 100
+        
+        # 데이터 셔플링
+        stock_groups = []
+        for i in range(1, n+1):
+            group_columns = [f'S{i}_return', f'S{i}_ma', f'S{i}_vol', f'S{i}_rvol']
+            stock_groups.append(group_columns)
+        
+        # 주식 그룹을 랜덤하게 섞음
+        random.seed(seed)
+        random.shuffle(stock_groups)
+        
+        # 섞인 순서대로 새로운 컬럼 이름 생성
+        new_columns = []
+        for i, group in enumerate(stock_groups, 1):
+            new_names = [f'S{i}_return', f'S{i}_ma', f'S{i}_vol', f'S{i}_rvol']
+            new_columns.extend(list(zip(group, new_names)))
+        
+        # 컬럼 이름 변경
+        for old_name, new_name in new_columns:
+            one_year_data = one_year_data.rename(columns={old_name: new_name + '_temp'})
+        for old_name, new_name in new_columns:
+            one_year_data = one_year_data.rename(columns={new_name + '_temp': new_name})
+        
+        # 날짜 순서대로 정렬
+        one_year_data = one_year_data.sort_values('Date').reset_index(drop=True)
+    
     return one_year_data
     
 
