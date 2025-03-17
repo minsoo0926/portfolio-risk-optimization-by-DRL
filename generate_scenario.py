@@ -107,7 +107,7 @@ def generate_scenario(n:int, seed = 42):
             stock_groups.append(group_columns)
         
         # 주식 그룹을 랜덤하게 섞음
-        random.seed(seed)
+        random.seed(int(seed))
         random.shuffle(stock_groups)
         
         # 섞인 순서대로 새로운 컬럼 이름 생성

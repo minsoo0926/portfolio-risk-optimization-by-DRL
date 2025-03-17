@@ -6,6 +6,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from generate_scenario import generate_scenario
 import os
 import time
+import torch
 
 # 사용자 정의 환경
 class PortfolioEnv(gym.Env):
@@ -30,6 +31,11 @@ class PortfolioEnv(gym.Env):
         self.current_step = 0
         self.previous_action = np.zeros(10)  # 이전 행동은 0으로 초기화
         
+        # 보상 버퍼 초기화 (환경 생성 시 한 번만)
+        self.reward_buffer = []
+        self.return_buffer = []
+        self.vol_buffer = []
+        
         # 초기 상태 설정
         self.state = self._get_state()
 
@@ -50,43 +56,49 @@ class PortfolioEnv(gym.Env):
         return self.state, {}
 
     def step(self, action):
-        # 행동 정규화: 가중치 합이 0이 되도록 함
+        # 행동 정규화
         action = action - np.mean(action)
         weights = action / (np.sum(np.abs(action)) + 1e-8)
         
-        # 수익률 데이터 추출 (각 주식의 일일 수익률은 첫 번째 feature라고 가정)
-        returns_indices = np.arange(0, 40, 4)  # 0, 4, 8, ..., 36
-        stock_returns = self.market_data[self.current_step, returns_indices]
-        
-        # 변동성 데이터 추출 (각 주식의 변동성은 세 번째 feature라고 가정)
-        vol_indices = np.arange(2, 40, 4)      # 2, 6, 10, ..., 38
-        stock_vols = self.market_data[self.current_step, vol_indices]
-        
-        # 포트폴리오 수익률 계산
-        portfolio_return = np.sum(weights * stock_returns)
-        
-        # 포트폴리오 위험 계산 (간소화 버전: 상관관계 무시)
-        portfolio_vol = np.sqrt(np.sum((weights * stock_vols) ** 2))
-        
-        # 턴오버 계산 (이전 가중치와의 차이)
-        turnover = np.sum(np.abs(weights - self.previous_action))
-        
-        # 스케일링을 고려한 보상 계산 - 보상 함수 조정
-        # 기존: reward = portfolio_return - 10 * portfolio_vol - 1 * turnover
-        reward = 100 * portfolio_return - 5 * portfolio_vol - 0.5 * turnover
-        
-        # 이전 행동 업데이트
+        # 현재 가중치 저장
         self.previous_action = weights.copy()
         
-        # 다음 단계로 이동
+        # 다음 시점으로 이동
         self.current_step += 1
         terminated = self.current_step >= self.max_steps
-        truncated = False  # 일반적으로 시간 제한 초과 시 True
+        truncated = False
         
-        # 새로운 상태 계산 (에피소드가 끝나지 않았을 경우)
+        # 새 시점에서의 수익률 데이터 (t+1 시점)
         if not terminated:
+            returns_indices = np.arange(0, 40, 4)
+            stock_returns = self.market_data[self.current_step, returns_indices]
+            
+            vol_indices = np.arange(2, 40, 4)
+            stock_vols = self.market_data[self.current_step, vol_indices]
+            
+            # 포트폴리오 수익률 계산 (이전 가중치 * 현재 수익률)
+            portfolio_return = np.sum(weights * stock_returns)
+            
+            # 포트폴리오 위험 계산
+            portfolio_vol = np.sqrt(np.sum((weights * stock_vols) ** 2))
+            
+            # 턴오버 계산 (다음 행동에서 계산되므로 여기서는 0)
+            turnover = 0  # 첫 스텝에서는 이전 가중치가 없으므로 0
+            
+            # 보상 계산
+            raw_reward = 5 * portfolio_return - 0.1 * portfolio_vol - 0.01 * turnover
+            reward = raw_reward
+            
+            # 새로운 상태 계산
             self.state = self._get_state()
+        else:
+            # 에피소드 종료 시 보상 없음
+            portfolio_return = 0
+            portfolio_vol = 0
+            turnover = 0
+            reward = 0
         
+        # info 딕셔너리에 수익률과 변동성 정보 포함
         info = {
             "portfolio_return": portfolio_return,
             "portfolio_vol": portfolio_vol,
@@ -111,12 +123,19 @@ class CustomCallback(BaseCallback):
         self.eval_freq = eval_freq
         self.model_path = model_path
         
+        # temp 디렉토리가 없으면 생성
+        if not os.path.exists('temp'):
+            os.makedirs('temp')
+            print("temp 폴더를 생성했습니다.")
+        
     def _on_step(self):
         try:
-            # 주기적으로 모델 저장
+            # 주기적으로 모델 저장 (이제 temp 폴더에 저장)
             if self.num_timesteps % self.save_freq == 0:
-                self.model.save(f"{self.model_path}_{self.num_timesteps}")
-                print(f"Timestep {self.num_timesteps}: 모델 저장 완료 ({self.model_path}_{self.num_timesteps})")
+                # temp 폴더에 중간 모델 저장
+                temp_model_path = os.path.join('temp', f"{self.model_path}_{self.num_timesteps}")
+                self.model.save(temp_model_path)
+                print(f"Timestep {self.num_timesteps}: 모델 저장 완료 (temp/{self.model_path}_{self.num_timesteps})")
             
             # 주기적으로 모델 성능 평가
             if self.num_timesteps % self.eval_freq == 0:
@@ -132,41 +151,118 @@ class CustomCallback(BaseCallback):
             return False
             
     def _evaluate_model(self):
-        print(f"\n===== Timestep {self.num_timesteps} 모델 평가 =====")
-        episode_rewards = []
+        print("\n" + "="*50)
+        print(f"===== Timestep {self.num_timesteps} 모델 평가 =====")
+        print("="*50)
+        
+        # 결과 저장용 변수
+        daily_returns = []  # 원본 일일 수익률
+        net_returns = []    # 거래비용 차감 후 순 수익률
         episode_vols = []
+        risk_free_rates = []
+        
+        # 초기 포트폴리오 가치
+        initial_capital = 10000
+        portfolio_value = initial_capital
         
         # 평가 환경에서 에피소드 실행
-        obs, _ = self.eval_env.reset()  # 튜플에서 첫 번째 요소만 사용
+        obs, _ = self.eval_env.reset()
         done = False
         while not done:
             action, _ = self.model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = self.eval_env.step(action)
             done = terminated or truncated
-            episode_rewards.append(info["portfolio_return"])
+            
+            # 일일 수익률 및 기타 지표 저장
+            daily_return = info["portfolio_return"] / 100.0  # 퍼센트를 소수점으로 변환
+            daily_returns.append(daily_return)
+            
+            turnover = info["turnover"]
+            transaction_cost = 0.001 * turnover  # 0.1% 거래비용
+            
+            # 거래비용 반영한 순 수익률
+            net_return = daily_return - transaction_cost
+            net_returns.append(net_return)
+            
+            # 포트폴리오 가치 업데이트 (복리 적용)
+            portfolio_value *= (1 + net_return)
+            
             episode_vols.append(info["portfolio_vol"])
+            
+            # 국채금리 데이터 수집
+            if hasattr(self.eval_env, 'macro_data') and self.eval_env.current_step-1 < len(self.eval_env.macro_data):
+                t_bill_rate = self.eval_env.macro_data[self.eval_env.current_step-1, 1] / 100.0
+                risk_free_rates.append(t_bill_rate)
         
-        # 성과 지표 계산
-        mean_reward = np.mean(episode_rewards)
+        # 일별 평균 수익률 (산술평균)
+        mean_daily_return = np.mean(daily_returns) * 100  # 퍼센트로 변환
+        mean_net_return = np.mean(net_returns) * 100      # 퍼센트로 변환
+        
+        # 복리 기준 전체 수익률 계산 (순 수익률 기준)
+        total_return = (portfolio_value / initial_capital - 1) * 100
+        
+        # 투자 기간에 따른 연간화 조정
+        days = len(daily_returns)
+        trading_days_per_year = 252
+        
+        # 연간 환산 수익률 계산
+        annualized_return = ((1 + total_return/100) ** (trading_days_per_year/days) - 1) * 100
+        
+        # 평균 변동성
         mean_vol = np.mean(episode_vols)
-        sharpe = mean_reward / (np.std(episode_rewards) + 1e-8)
+        
+        # 무위험 이자율 계산 - 단순화
+        if risk_free_rates:
+            # 일별 이자율의 산술평균에 거래일수를 곱해 연율화
+            annual_risk_free_rate = np.mean(risk_free_rates) * 100 * trading_days_per_year
+        else:
+            annual_risk_free_rate = 2.0  # 연 2% 기본값
+        
+        # 샤프 비율 계산 - 순 수익률 기준으로 표준편차 계산 (중요!)
+        net_returns_array = np.array(net_returns) * 100  # 퍼센트로 변환
+        daily_std = np.std(net_returns_array)  # 순 수익률의 표준편차
+        annualized_std = daily_std * np.sqrt(trading_days_per_year)
+        
+        # 샤프 비율: (연간 수익률 - 연간 무위험 이자율) / 연간 표준편차
+        sharpe = (annualized_return - annual_risk_free_rate) / (annualized_std + 1e-8)
         
         self.eval_results.append({
             "timestep": self.num_timesteps,
-            "mean_reward": mean_reward,
+            "mean_daily_return": mean_daily_return,
+            "mean_net_return": mean_net_return,
+            "total_return": total_return,
+            "annualized_return": annualized_return,
             "mean_vol": mean_vol,
-            "sharpe": sharpe
+            "sharpe": sharpe,
+            "annual_risk_free_rate": annual_risk_free_rate
         })
         
-        print(f"평균 수익률: {mean_reward:.4f}")
-        print(f"평균 변동성: {mean_vol:.4f}")
-        print(f"Sharpe Ratio: {sharpe:.4f}")
+        # 결과 출력
+        print("\n성과 지표:")
+        print(f"► 일일 평균 수익률 (거래비용 전): {mean_daily_return:.4f}%")
+        print(f"► 일일 평균 순수익률 (거래비용 후): {mean_net_return:.4f}%")
+        print(f"► 복리 계산 총 수익률: {total_return:.4f}%")
+        print(f"► 연간 환산 수익률: {annualized_return:.4f}%")
+        print(f"► 연간 무위험 이자율: {annual_risk_free_rate:.4f}%")
+        print(f"► 일별 수익률 표준편차(연간화): {annualized_std:.4f}%")
+        print(f"► Sharpe Ratio: {sharpe:.4f}")
         
-        # 최고 성능 모델 저장
-        if mean_reward > self.best_mean_reward:
-            self.best_mean_reward = mean_reward
+        # 로그 기록 부분도 수정
+        with open("evaluation_log.txt", "a") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Timestep {self.num_timesteps}\n")
+            f.write(f"일일 평균 수익률 (거래비용 전): {mean_daily_return:.4f}%\n")
+            f.write(f"일일 평균 순수익률 (거래비용 후): {mean_net_return:.4f}%\n")
+            f.write(f"복리 계산 총 수익률: {total_return:.4f}%\n")
+            f.write(f"연간 환산 수익률: {annualized_return:.4f}%\n")
+            f.write(f"연간 무위험 이자율: {annual_risk_free_rate:.4f}%\n")
+            f.write(f"일별 수익률 표준편차(연간화): {annualized_std:.4f}%\n")
+            f.write(f"Sharpe Ratio: {sharpe:.4f}\n\n")
+        
+        # 최고 성능 모델 저장 (이제는 복리 수익률 기준으로)
+        if total_return > self.best_mean_reward:
+            self.best_mean_reward = total_return
             self.model.save(f"{self.model_path}_best")
-            print(f"새로운 최고 성능 모델 저장 ({self.model_path}_best), 수익률: {mean_reward:.4f}")
+            print(f"새로운 최고 성능 모델 저장 ({self.model_path}_best), 총 수익률: {total_return:.4f}%")
 
 def main():
     try:
@@ -176,49 +272,102 @@ def main():
         save_freq = 10000
         eval_freq = 20000
 
-        # 환경 생성 시 시드 범위 제한
-        train_env = PortfolioEnv(seed=0)
+        # 학습 데이터의 다양성 확보
+        train_seeds = np.random.randint(0, 10000, size=10)  # 여러 시드 사용
+        
+        # 여러 환경에서 학습
+        train_envs = [PortfolioEnv(seed=seed) for seed in train_seeds]
         
         # 저장된 모델이 있으면 불러오고, 없으면 새로 생성
         if os.path.exists(model_path + ".zip"):
             try:
                 # 기존 모델 로드 시도
-                model = PPO.load(model_path, env=train_env)
+                model = PPO.load(model_path, env=train_envs[0])
                 print(f"모델 불러오기 완료 ({model_path})")
             except ValueError as e:
                 # 관측 공간 불일치 오류 발생 시 새 모델 생성
                 print(f"기존 모델 로드 실패: {e}")
                 print("새 모델을 생성합니다.")
-                model = PPO("MlpPolicy", train_env, 
-                            learning_rate=1e-4,  # 학습률 감소
-                            n_steps=2048, 
-                            batch_size=128,  # 배치 크기 증가
-                            gamma=0.99,
-                            ent_coef=0.01,  # 엔트로피 계수 추가
-                            clip_range=0.2,  # 클리핑 범위 명시
-                            verbose=1)
+                policy_kwargs = dict(
+                    net_arch=[dict(pi=[128, 128, 64], vf=[128, 128, 64])],
+                    activation_fn=torch.nn.ReLU
+                )
+                model = PPO("MlpPolicy", train_envs[0], policy_kwargs=policy_kwargs,
+                            learning_rate=0.0001,      # 학습률 설정
+                            n_steps=2048,              # 스텝 수 설정
+                            batch_size=128,            # 배치 크기 설정
+                            gamma=0.99,                # 감마 설정
+                            ent_coef=0.02,             # 엔트로피 계수 설정
+                            clip_range=0.1,            # 클리핑 범위 설정
+                            vf_coef=0.7,               # 가치 함수 계수 설정
+                            max_grad_norm=0.3,         # 최대 그래디언트 노름 설정
+                            verbose=2)
         else:
-            model = PPO("MlpPolicy", train_env, 
-                        learning_rate=1e-4,  # 학습률 감소
-                        n_steps=2048, 
-                        batch_size=128,  # 배치 크기 증가
+            policy_kwargs = dict(
+                net_arch=[dict(pi=[128, 128, 64], vf=[128, 128, 64])],
+                activation_fn=torch.nn.ReLU
+            )
+            model = PPO("MlpPolicy", train_envs[0], policy_kwargs=policy_kwargs,
+                        learning_rate=0.0001,
+                        n_steps=2048,
+                        batch_size=128,
                         gamma=0.99,
-                        ent_coef=0.01,  # 엔트로피 계수 추가
-                        clip_range=0.2,  # 클리핑 범위 명시
-                        verbose=1)
+                        ent_coef=0.02,
+                        clip_range=0.1,
+                        vf_coef=0.7,
+                        max_grad_norm=0.3,
+                        verbose=2)
             print("새 모델 생성")
         
         # 평가용 환경 생성
         eval_env = PortfolioEnv(seed=9999)
         callback = CustomCallback(
             eval_env=eval_env,
-            save_freq=save_freq,
-            eval_freq=eval_freq,
+            save_freq=5000,   # 더 자주 저장
+            eval_freq=5000,   # 더 자주 평가
             model_path=model_path
         )
         
-        # 콜백과 함께 모델 학습
-        model.learn(total_timesteps=total_timesteps, callback=callback)
+        # 각 환경에서 번갈아가며 학습
+        learning_steps_per_env = 5000
+        for cycle in range(total_timesteps // (len(train_envs) * learning_steps_per_env)):
+            print(f"\n===== 학습 사이클 {cycle+1} 시작 =====")
+            
+            for env_idx, env in enumerate(train_envs):
+                try:
+                    model.set_env(env)  # 환경 변경
+                    
+                    # 마지막 환경에서만 콜백 사용
+                    if env_idx == len(train_envs) - 1:
+                        model.learn(total_timesteps=learning_steps_per_env, 
+                                   reset_num_timesteps=False, 
+                                   callback=callback)
+                    else:
+                        model.learn(total_timesteps=learning_steps_per_env,
+                                   reset_num_timesteps=False)
+                    
+                    print(f"환경 {env_idx} (시드 {train_seeds[env_idx]}) 학습 완료")
+                    
+                    # 각 환경 학습 후 별도 평가 실행
+                    if env_idx % 3 == 0:  # 3개 환경마다 한 번씩 평가
+                        print("\n----- 환경 학습 후 중간 평가 -----")
+                        obs, _ = eval_env.reset()
+                        done = False
+                        rewards = []
+                        while not done:
+                            action, _ = model.predict(obs, deterministic=True)
+                            obs, _, terminated, truncated, info = eval_env.step(action)
+                            done = terminated or truncated
+                            rewards.append(info["portfolio_return"])
+                        print(f"평균 수익률: {np.mean(rewards):.4f}")
+                    
+                except Exception as e:
+                    print(f"환경 {env_idx} 학습 중 오류: {e}")
+                    continue
+            
+            # 각 사이클 후 강제 평가
+            if cycle > 0 and cycle % 2 == 0:  # 2 사이클마다 한 번씩
+                callback._evaluate_model()
         
         # 최종 모델 저장
         model.save(model_path)
@@ -235,26 +384,68 @@ def main():
                     # 평가용 환경 생성 (학습에 사용되지 않은 시드)
                     test_env = PortfolioEnv(seed=eval_seed)
                     
-                    obs, _ = test_env.reset()  # 튜플에서 첫 번째 요소만 사용
+                    obs, _ = test_env.reset()
                     done = False
-                    episode_returns = []
+                    daily_returns = []
+                    net_returns = []
                     episode_vols = []
+                    t_bill_rates = []
+                    
+                    # 초기 자본
+                    initial_capital = 10000
+                    portfolio_value = initial_capital
                     
                     while not done:
                         action, _ = model.predict(obs, deterministic=True)
                         obs, reward, terminated, truncated, info = test_env.step(action)
                         done = terminated or truncated
-                        episode_returns.append(info["portfolio_return"])
+                        
+                        # 일일 수익률 및 기타 지표 저장
+                        daily_return = info["portfolio_return"] / 100.0
+                        daily_returns.append(daily_return)
+                        
+                        turnover = info["turnover"]
+                        transaction_cost = 0.001 * turnover
+                        
+                        # 거래비용 반영한 순 수익률
+                        net_return = daily_return - transaction_cost
+                        net_returns.append(net_return)
+                        
+                        # 포트폴리오 가치 업데이트 (복리 적용)
+                        portfolio_value *= (1 + net_return)
+                        
                         episode_vols.append(info["portfolio_vol"])
+                        
+                        # 국채금리 데이터 수집
+                        if test_env.current_step-1 < len(test_env.macro_data):
+                            t_bill_rate = test_env.macro_data[test_env.current_step-1, 1] / 100.0
+                            t_bill_rates.append(t_bill_rate)
                     
-                    # 성과 평가 지표 계산
-                    mean_return = np.mean(episode_returns)
-                    std_return = np.std(episode_returns) if len(episode_returns) > 1 else 1e-8
-                    sharpe_ratio = mean_return / (std_return + 1e-8)
+                    # 복리 기준 전체 수익률 계산
+                    total_return = (portfolio_value / initial_capital - 1) * 100
+                    
+                    # 연간 환산 수익률 계산
+                    days = len(daily_returns)
+                    trading_days_per_year = 252
+                    annualized_return = ((1 + total_return/100) ** (trading_days_per_year/days) - 1) * 100
+                    
+                    # 무위험 이자율 계산
+                    if t_bill_rates:
+                        annual_risk_free_rate = np.mean(t_bill_rates) * 100 * trading_days_per_year
+                    else:
+                        annual_risk_free_rate = 2.0
+                    
+                    # 샤프 비율 계산 - 순 수익률 기준 표준편차
+                    net_returns_array = np.array(net_returns) * 100
+                    daily_std = np.std(net_returns_array)
+                    annualized_std = daily_std * np.sqrt(trading_days_per_year)
+                    sharpe_ratio = (annualized_return - annual_risk_free_rate) / (annualized_std + 1e-8)
                     
                     results.append({
                         "seed": eval_seed,
-                        "mean_return": mean_return,
+                        "daily_return": daily_return,
+                        "total_return": total_return,
+                        "annual_return": annualized_return,
                         "vol": np.mean(episode_vols),
                         "sharpe": sharpe_ratio
                     })
@@ -270,7 +461,7 @@ def main():
             # 중간 결과 저장 (100개 에피소드마다)
             if len(results) % 100 == 0 and len(results) > 0:
                 avg_sharpe = np.mean([r["sharpe"] for r in results])
-                avg_return = np.mean([r["mean_return"] for r in results])
+                avg_return = np.mean([r["total_return"] for r in results])
                 avg_vol = np.mean([r["vol"] for r in results])
                 
                 print(f"\n===== 중간 평가 결과 ({len(results)} 에피소드) =====")
@@ -280,7 +471,7 @@ def main():
         
         # 최종 평가 결과 요약
         avg_sharpe = np.mean([r["sharpe"] for r in results])
-        avg_return = np.mean([r["mean_return"] for r in results])
+        avg_return = np.mean([r["total_return"] for r in results])
         avg_vol = np.mean([r["vol"] for r in results])
         
         print("\n===== 최종 평가 결과 =====")
