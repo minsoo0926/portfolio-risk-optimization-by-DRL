@@ -77,21 +77,37 @@ def run_training():
             bufsize=1
         )
         
-        # 훈련 출력 로깅
-        for line in iter(current_process.stdout.readline, ''):
-            logger.info(line.strip())
+        # 훈련 출력 로깅 - 별도 스레드에서 처리
+        def log_output(process):
+            global current_process, is_training
+            try:
+                for line in iter(process.stdout.readline, ''):
+                    if line:
+                        logger.info(line.strip())
+                
+                # 프로세스가 완료되면 상태 업데이트
+                if process.poll() is not None:
+                    if process.returncode == 0:
+                        logger.info("훈련 완료: 성공")
+                    else:
+                        logger.error(f"훈련 실패: 종료 코드 {process.returncode}")
+                    
+                    # 전역 변수 업데이트
+                    current_process = None
+                    is_training = False
+                    
+            except Exception as e:
+                logger.error(f"로그 처리 중 오류: {str(e)}")
+                current_process = None
+                is_training = False
         
-        # 프로세스 완료 대기
-        current_process.wait()
+        # 로깅 스레드 시작
+        log_thread = threading.Thread(target=log_output, args=(current_process,))
+        log_thread.daemon = True
+        log_thread.start()
         
-        if current_process.returncode == 0:
-            logger.info("훈련 완료: 성공")
-        else:
-            logger.error(f"훈련 실패: 종료 코드 {current_process.returncode}")
-        
-        current_process = None
-        is_training = False
-        return {"status": "success", "message": "훈련이 완료되었습니다."}
+        # 이 함수는 즉시 반환하여 백그라운드에서 실행되게 함
+        return {"status": "success", "message": "훈련이 시작되었습니다."}
         
     except Exception as e:
         logger.error(f"훈련 실행 중 오류: {str(e)}")
@@ -121,21 +137,47 @@ def run_evaluation():
             bufsize=1
         )
         
-        # 평가 출력 로깅
-        for line in iter(current_process.stdout.readline, ''):
-            logger.info(line.strip())
+        # 평가 출력 로깅 - 별도 스레드에서 처리
+        def log_output(process):
+            global current_process, is_evaluating
+            try:
+                for line in iter(process.stdout.readline, ''):
+                    if line:
+                        logger.info(line.strip())
+                
+                # 프로세스가 완료되면 상태 업데이트
+                if process.poll() is not None:
+                    if process.returncode == 0:
+                        logger.info("모델 평가 완료: 성공")
+                    else:
+                        logger.error(f"모델 평가 실패: 종료 코드 {process.returncode}")
+                    
+                    # 결과 이미지를 static 폴더로 복사
+                    try:
+                        import shutil
+                        for img_file in ['portfolio_performance.png', 'portfolio_weights.png']:
+                            if os.path.exists(img_file):
+                                shutil.copy(img_file, os.path.join("static", img_file))
+                                logger.info(f"이미지 파일 복사 완료: {img_file} -> static/{img_file}")
+                    except Exception as e:
+                        logger.warning(f"이미지 파일 복사 중 오류: {str(e)}")
+                    
+                    # 전역 변수 업데이트
+                    current_process = None
+                    is_evaluating = False
+                    
+            except Exception as e:
+                logger.error(f"로그 처리 중 오류: {str(e)}")
+                current_process = None
+                is_evaluating = False
         
-        # 프로세스 완료 대기
-        current_process.wait()
+        # 로깅 스레드 시작
+        log_thread = threading.Thread(target=log_output, args=(current_process,))
+        log_thread.daemon = True
+        log_thread.start()
         
-        if current_process.returncode == 0:
-            logger.info("모델 평가 완료: 성공")
-        else:
-            logger.error(f"모델 평가 실패: 종료 코드 {current_process.returncode}")
-        
-        current_process = None
-        is_evaluating = False
-        return {"status": "success", "message": "모델 평가가 완료되었습니다."}
+        # 이 함수는 즉시 반환하여 백그라운드에서 실행되게 함
+        return {"status": "success", "message": "모델 평가가 시작되었습니다."}
         
     except Exception as e:
         logger.error(f"모델 평가 실행 중 오류: {str(e)}")
@@ -148,23 +190,46 @@ def stop_current_process():
     global current_process, is_training, is_evaluating
     
     if current_process is None:
+        logger.warning("실행 중인 작업이 없습니다.")
+        is_training = False
+        is_evaluating = False
         return {"status": "error", "message": "실행 중인 작업이 없습니다."}
     
     try:
-        current_process.terminate()
-        time.sleep(1)
+        # 현재 프로세스 레퍼런스 저장
+        proc = current_process
         
-        if current_process.poll() is None:  # 아직 종료되지 않았으면 강제 종료
-            current_process.kill()
-        
-        logger.info("작업이 중지되었습니다.")
+        # 전역 변수 초기화 (먼저 초기화해서 상태 충돌 방지)
         current_process = None
         is_training = False
         is_evaluating = False
+        
+        # 프로세스 종료 시도
+        try:
+            proc.terminate()
+            time.sleep(0.5)
+            
+            # 프로세스가 아직 살아있는지 확인
+            if proc.poll() is None:
+                # 좀더 강제로 종료
+                try:
+                    proc.kill()
+                    proc.wait(timeout=2)
+                except:
+                    pass
+        except:
+            # 이미 종료된 경우 오류 무시
+            pass
+        
+        logger.info("작업이 중지되었습니다.")
         return {"status": "success", "message": "작업이 중지되었습니다."}
         
     except Exception as e:
         logger.error(f"작업 중지 중 오류: {str(e)}")
+        # 오류가 발생해도 상태 초기화
+        current_process = None
+        is_training = False
+        is_evaluating = False
         return {"status": "error", "message": f"작업 중지 중 오류: {str(e)}"}
 
 # FastAPI 관련 설정
@@ -641,9 +706,14 @@ async def evaluate_model(background_tasks: BackgroundTasks):
 
 @router.post("/api/stop")
 async def stop_process():
+    logger.info("작업 중지 요청 수신")
     result = stop_current_process()
     
     if result["status"] == "error":
+        # 이미 중지된 작업이라도 성공으로 간주 (프론트엔드에서 불필요한 에러 방지)
+        if "실행 중인 작업이 없습니다" in result["message"]:
+            return {"status": "success", "message": "이미 중지된 작업입니다."}
+        
         return JSONResponse(
             status_code=400,
             content=result
