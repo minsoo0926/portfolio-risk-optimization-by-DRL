@@ -1,12 +1,80 @@
-training_log.txt
-error_log.txt
-evaluation_log.txt
-
-__pycache__
-*.pyc
-*.pyo
-*.pyd
+# Python bytecode files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 *.pyw
 *.pyz
 *.pywz
-*.png
+
+# Logs and outputs
+*.log
+debug_log.txt
+error_log.txt
+evaluation_log.txt
+training_log.txt
+
+# Jupyter notebook
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Visualization outputs
+# Keep committed charts if needed for documentation/README
+portfolio_performance.png
+portfolio_weights.png
+debug_comparison.png
+return_distribution.png
+model_comparison.png
+
+# Temporary files
+temp/
+*.tmp
+*.bak
+*.swp
+
+# Saved models (optional - consider if you want to keep these in version control)
+# If models are too large, exclude them
+# *.zip
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+
+# VSCode
+.vscode/
+
+# Mac OS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Dataset (consider keeping in version control if small enough)
+# If datasets are too large or should not be shared, add them here
+# data/
+# *.csv
+
+# Saved model checkpoints
+# If you want to include only specific model versions in git
+# save/*.zip
