@@ -1,12 +1,16 @@
-import logging
-from utils import start_server
+"""
+Portfolio Optimization Web Server
 
-# 로깅 설정
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+This is the main entry point for the portfolio optimization web interface.
+It starts a FastAPI server that provides a user interface for training and
+evaluating portfolio optimization models.
+"""
+from app.server import start_server
+
+def main():
+    """Start the portfolio optimization web interface"""
+    print("Starting Portfolio Optimization Web Interface...")
+    start_server(host="127.0.0.1", port=8000)
 
 if __name__ == "__main__":
-    logger.info("포트폴리오 최적화 웹 인터페이스 시작")
-    
-    # FastAPI 웹 서버 시작
-    start_server()
+    main()

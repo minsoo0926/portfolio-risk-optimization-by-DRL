@@ -9,12 +9,11 @@ import seaborn as sns
 from datetime import datetime
 import logging
 import traceback
-from utils import get_logger, setup_app
 import threading
 import time
 
 # 로거 가져오기
-logger = get_logger()
+logger = logging.getLogger("portfolio_optimization")
 
 # 시각화 스타일 설정
 sns.set_style("whitegrid")

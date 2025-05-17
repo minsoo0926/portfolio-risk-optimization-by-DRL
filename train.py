@@ -12,10 +12,10 @@ import logging
 import traceback
 import asyncio
 import threading
-from utils import get_logger, start_server
+from app.server import start_server
 
 # 로거 가져오기
-logger = get_logger()
+logger = logging.getLogger("portfolio_optimization")
 
 # 사용자 정의 환경
 class PortfolioEnv(gym.Env):

@@ -1,58 +1,67 @@
-# 포트폴리오 위험 최적화 (Deep Reinforcement Learning)
+# Portfolio Risk Optimization Using Deep Reinforcement Learning
 
-포트폴리오 위험 최적화를 위한 심층 강화학습(DRL) 모델입니다. 이 프로젝트는 주식 시장 데이터를 사용하여 최적의 포트폴리오 가중치를 학습하고, 수익률, 변동성, 거래 비용을 모두 고려하여 위험 조정 수익률을 최대화합니다.
+A Deep Reinforcement Learning (DRL) model for portfolio risk optimization. This project utilizes stock market data to learn optimal portfolio weights, maximizing risk-adjusted returns by considering returns, volatility, and transaction costs.
 
-## 주요 기능
+## Key Features
 
-- **PPO(Proximal Policy Optimization)** 알고리즘을 사용한 심층 강화학습
-- 웹 인터페이스를 통한 훈련 및 평가 제어
-- 실시간 학습 진행 상황 모니터링
-- 다양한 시장 상황에서의 강건성 평가
-- 포트폴리오 성과 및 가중치 시각화
+- **Proximal Policy Optimization (PPO)** algorithm for deep reinforcement learning
+- Web interface for training and evaluation control
+- Real-time learning progress monitoring
+- Robustness evaluation across various market conditions
+- Portfolio performance and weight visualization
 
-## 설치 방법
+## Installation
 
 ```bash
-# 저장소 클론
+# Clone repository
 git clone https://github.com/yourusername/portfolio-risk-optimization-by-DRL.git
 cd portfolio-risk-optimization-by-DRL
 
-# 의존성 설치
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-## 사용 방법
+## Usage
 
-### 웹 인터페이스 실행
+### Launch Web Interface
 
 ```bash
-python main.py
+python app/server.py
 ```
 
-웹 브라우저에서 http://localhost:8000 에 접속하여 다음 기능을 사용할 수 있습니다:
+Access the following features via web browser at http://localhost:8000:
 
-1. **모델 훈련**: "모델 훈련" 버튼을 클릭하여 DRL 모델 훈련 시작
-2. **모델 평가**: "모델 평가" 버튼을 클릭하여 학습된 모델 성능 평가
-3. **작업 중지**: 현재 실행 중인 작업 중지
-4. **실시간 로그**: 훈련 및 평가 과정의 실시간 로그 확인
-5. **결과 시각화**: 평가 완료 후 포트폴리오 성과 및 가중치 시각화 확인
+1. **Train Model**: Click "Train Model" to start DRL model training
+2. **Evaluate Model**: Click "Evaluate Model" to assess trained model performance
+3. **Stop Task**: Terminate currently running tasks
+4. **Real-time Logs**: Monitor training and evaluation processes in real-time
+5. **Result Visualization**: View portfolio performance and weight visualizations after evaluation
 
-## 모델 구조
+## Model Architecture
 
-- **상태 공간**: 52차원 (10개 주식의 일별 수익률, 이동평균 수익률, 변동성, 상대 거래량, 매크로 지표, 이전 행동)
-- **행동 공간**: 10차원 연속 (각 주식의 포트폴리오 가중치)
-- **보상 함수**: 포트폴리오 수익률 - 변동성 패널티 - 거래비용 패널티
+- **State Space**: 52-dimensional (daily returns, moving average returns, volatility, relative volume, macro indicators, and previous actions for 10 stocks)
+- **Action Space**: 10-dimensional continuous (portfolio weights for each stock)
+- **Reward Function**: Portfolio return - volatility penalty - transaction cost penalty
 
-## 실험 결과
+## Experimental Results
 
-모델은 다양한 시장 상황에서 안정적인 성과를 보여주며, 특히 위험 조정 수익률(Sharpe Ratio)에서 우수한 성능을 보입니다.
+The model demonstrates stable performance across various market conditions, especially excelling in risk-adjusted returns (Sharpe Ratio).
 
-## 파일 구조
+## Project Structure
 
-- `main.py`: 웹 인터페이스 실행을 위한 진입점
-- `train.py`: 모델 학습 스크립트
-- `evaluation.py`: 모델 평가 스크립트
-- `utils.py`: 웹 인터페이스 및 로깅 유틸리티
-- `generate_scenario.py`: 학습 및 평가용 시나리오 생성
-- `/data`: 주식 및 매크로 데이터
-- `/static`: 결과 이미지 저장 디렉토리
+- `app/` - Web application and server code
+  - `server.py` - FastAPI server implementation
+  - `templates.py` - Web interface HTML templates
+  - `utils.py` - Web application utility functions
+- `data/` - Financial time series data
+  - `derived/` - Processed data files
+  - `price/` - Stock price data
+  - `train_set/` - Training datasets
+- `debug/` - Debugging utilities and logs
+- `logs/` - Application logs
+- `save/` - Saved model checkpoints
+- `static/` - Static files for web interface (images, etc.)
+- `train.py` - Model training script
+- `evaluation.py` - Model evaluation script
+- `main.py` - Core functions and model implementation
+- `requirements.txt` - Python dependencies
