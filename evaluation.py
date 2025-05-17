@@ -11,6 +11,7 @@ import logging
 import traceback
 import threading
 import time
+from app.server import start_server
 
 # 로거 가져오기
 logger = logging.getLogger("portfolio_optimization")
@@ -427,7 +428,7 @@ def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000
 
 def start_evaluation_server():
     """평가 서버 시작"""
-    app = setup_app()
+    app = start_server()
     
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
