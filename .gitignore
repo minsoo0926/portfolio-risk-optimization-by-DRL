@@ -1,0 +1,12 @@
+training_log.txt
+error_log.txt
+evaluation_log.txt
+
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.png
