@@ -228,12 +228,17 @@ class CustomCallback(BaseCallback):
             annual_risk_free_rate = 2.0  # 연 2% 기본값
         
         # 샤프 비율 계산 - 순 수익률 기준으로 표준편차 계산 (중요!)
-        net_returns_array = np.array(net_returns) * 100  # 퍼센트로 변환
+        # 퍼센트로 변환된 일별 순수익률을 기준으로 표준편차 계산
+        net_returns_array = np.array(net_returns) * 100  # 소수점을 퍼센트로 변환
         daily_std = np.std(net_returns_array)  # 순 수익률의 표준편차
-        annualized_std = daily_std * np.sqrt(trading_days_per_year)
+        annualized_std = daily_std * np.sqrt(trading_days_per_year)  # 연간화된 표준편차
         
         # 샤프 비율: (연간 수익률 - 연간 무위험 이자율) / 연간 표준편차
+        # 여기서 엡실론(1e-8)을 더해 분모가 0이 되는 것을 방지
         sharpe = (annualized_return - annual_risk_free_rate) / (annualized_std + 1e-8)
+        
+        # 로깅을 위한 추가 정보
+        mean_daily_net_return = np.mean(net_returns) * 100  # 일별 평균 순수익률
         
         self.eval_results.append({
             "timestep": self.num_timesteps,
@@ -249,23 +254,29 @@ class CustomCallback(BaseCallback):
         # 결과 출력
         logger.info("\n성과 지표:")
         logger.info(f"► 일일 평균 수익률 (거래비용 전): {mean_daily_return:.4f}%")
-        logger.info(f"► 일일 평균 순수익률 (거래비용 후): {mean_net_return:.4f}%")
+        logger.info(f"► 일일 평균 순수익률 (거래비용 후): {mean_daily_net_return:.4f}%")
         logger.info(f"► 복리 계산 총 수익률: {total_return:.4f}%")
         logger.info(f"► 연간 환산 수익률: {annualized_return:.4f}%")
         logger.info(f"► 연간 무위험 이자율: {annual_risk_free_rate:.4f}%")
-        logger.info(f"► 일별 수익률 표준편차(연간화): {annualized_std:.4f}%")
+        logger.info(f"► 일별 순수익률 표준편차: {daily_std:.4f}%")
+        logger.info(f"► 연간화된 표준편차: {annualized_std:.4f}%")
         logger.info(f"► Sharpe Ratio: {sharpe:.4f}")
+        
+        # 샤프 비율 계산 세부 정보 출력 (디버깅용)
+        logger.info(f"► Sharpe 계산: ({annualized_return:.4f} - {annual_risk_free_rate:.4f}) / {annualized_std:.4f} = {sharpe:.4f}")
         
         # 로그 기록 부분도 수정
         with open("evaluation_log.txt", "a") as f:
             f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Timestep {self.num_timesteps}\n")
             f.write(f"일일 평균 수익률 (거래비용 전): {mean_daily_return:.4f}%\n")
-            f.write(f"일일 평균 순수익률 (거래비용 후): {mean_net_return:.4f}%\n")
+            f.write(f"일일 평균 순수익률 (거래비용 후): {mean_daily_net_return:.4f}%\n")
             f.write(f"복리 계산 총 수익률: {total_return:.4f}%\n")
             f.write(f"연간 환산 수익률: {annualized_return:.4f}%\n")
             f.write(f"연간 무위험 이자율: {annual_risk_free_rate:.4f}%\n")
-            f.write(f"일별 수익률 표준편차(연간화): {annualized_std:.4f}%\n")
-            f.write(f"Sharpe Ratio: {sharpe:.4f}\n\n")
+            f.write(f"일별 순수익률 표준편차: {daily_std:.4f}%\n")
+            f.write(f"연간화된 표준편차: {annualized_std:.4f}%\n")
+            f.write(f"Sharpe Ratio: {sharpe:.4f}\n")
+            f.write(f"Sharpe 계산: ({annualized_return:.4f} - {annual_risk_free_rate:.4f}) / {annualized_std:.4f} = {sharpe:.4f}\n\n")
         
         # 최고 성능 모델 저장 (이제는 복리 수익률 기준으로)
         if total_return > self.best_mean_reward:

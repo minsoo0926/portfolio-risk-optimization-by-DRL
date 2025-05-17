@@ -169,8 +169,21 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
     # 성과 지표 계산
     total_return = (portfolio_values[-1] / initial_capital - 1) * 100
     annualized_return = ((1 + total_return/100) ** (252/len(portfolio_values)) - 1) * 100
-    annualized_vol = np.std(returns) * np.sqrt(252)
-    sharpe_ratio = annualized_return / annualized_vol if annualized_vol != 0 else 0
+    
+    # 순 수익률 계산 (거래비용 차감 후)
+    net_returns = [r - 0.001 * t/100.0 for r, t in zip(returns, turnovers)]
+    
+    # 연간화된 변동성 계산 - 순 수익률 기준
+    net_returns_array = np.array(net_returns) * 100  # 퍼센트로 변환
+    daily_std = np.std(net_returns_array)
+    annualized_vol = daily_std * np.sqrt(252)
+    
+    # 무위험 이자율 계산 (간략화)
+    annual_risk_free_rate = 2.0  # 연 2% 가정
+    
+    # 샤프 비율 계산: (연간 수익률 - 무위험 이자율) / 연간 변동성
+    sharpe_ratio = (annualized_return - annual_risk_free_rate) / annualized_vol if annualized_vol != 0 else 0
+    
     max_drawdown = calculate_max_drawdown(portfolio_values)
     
     # 결과 출력
@@ -178,8 +191,10 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
     logger.info(f"시드: {seed}")
     logger.info(f"총 수익률: {total_return:.2f}%")
     logger.info(f"연율화 수익률: {annualized_return:.2f}%")
+    logger.info(f"평균 일별 순수익률: {np.mean(net_returns) * 100:.4f}%")
     logger.info(f"연율화 변동성: {annualized_vol:.2f}%")
-    logger.info(f"샤프 비율: {sharpe_ratio:.2f}")
+    logger.info(f"무위험 이자율: {annual_risk_free_rate:.2f}%")
+    logger.info(f"샤프 비율: {sharpe_ratio:.4f}")
     logger.info(f"최대 낙폭: {max_drawdown:.2f}%")
     
     # 포트폴리오 가치 추이 시각화
@@ -196,12 +211,17 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
     plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
     plt.xticks(rotation=45)
     
-    # 일별 수익률 차트
+    # 일별 수익률 차트 (순 수익률로 변경)
     plt.subplot(2, 1, 2)
-    plt.plot(results['Date'], results['Daily_Return'], 'g-', linewidth=1)
+    
+    # 원본 수익률과 순 수익률 모두 표시
+    plt.plot(results['Date'], returns, 'g-', alpha=0.5, linewidth=1, label='Gross Returns')
+    plt.plot(results['Date'], net_returns, 'r-', linewidth=1, label='Net Returns (after costs)')
+    
     plt.title('Daily Returns', fontsize=15)
     plt.ylabel('Return (%)', fontsize=12)
     plt.grid(True)
+    plt.legend()
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
     plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
     plt.xticks(rotation=45)
