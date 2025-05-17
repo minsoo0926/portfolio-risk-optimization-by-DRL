@@ -1,0 +1,19 @@
+2025-05-17 16:19:52,649 - INFO - Sample chart images generated
+2025-05-17 16:19:52,649 - INFO - Web interface running at http://127.0.0.1:8000
+2025-05-17 16:20:28,763 - INFO - Model evaluation request received - starting evaluation
+2025-05-17 16:20:28,763 - INFO - Generating portfolio charts
+2025-05-17 16:20:29,100 - INFO - Simulation completed: Total return 5.49%
+2025-05-17 16:20:29,100 - INFO - Annualized return: 5.49%, Sharpe ratio: 0.3431
+2025-05-17 16:20:29,171 - INFO - Image file copied: portfolio_performance.png -> static/portfolio_performance.png
+2025-05-17 16:20:29,179 - INFO - Image file copied: portfolio_weights.png -> static/portfolio_weights.png
+2025-05-17 16:21:33,972 - INFO - Client disconnected
+2025-05-17 16:21:47,105 - INFO - Sample chart images generated
+2025-05-17 16:21:47,106 - INFO - Web interface running at http://127.0.0.1:8000
+2025-05-17 16:21:57,352 - INFO - Client disconnected
+2025-05-17 16:21:58,204 - INFO - Client disconnected
+2025-05-17 16:21:59,798 - INFO - Model evaluation request received - starting evaluation
+2025-05-17 16:21:59,798 - INFO - Generating portfolio charts
+2025-05-17 16:21:59,984 - INFO - Simulation completed: Total return 65.46%
+2025-05-17 16:21:59,985 - INFO - Annualized return: 65.46%, Sharpe ratio: 3.9776
+2025-05-17 16:22:00,060 - INFO - Image file copied: portfolio_performance.png -> static/portfolio_performance.png
+2025-05-17 16:22:00,060 - INFO - Image file copied: portfolio_weights.png -> static/portfolio_weights.png
