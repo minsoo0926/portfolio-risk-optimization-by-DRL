@@ -451,15 +451,15 @@ def setup_app():
     
     return app
 
+import uvicorn
+# Create FastAPI app
+app = setup_app()
+
 def start_server(host="127.0.0.1", port=8000):
     """Start the web server"""
-    import uvicorn
-    
-    # Create FastAPI app
-    app = setup_app()
-    
+        
     logger.info(f"Web interface running at http://{host}:{port}")
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run("app.server:app", host=host, port=port, log_level="info", reload=True)
 
 if __name__ == "__main__":
     start_server()

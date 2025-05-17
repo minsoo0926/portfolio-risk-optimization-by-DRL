@@ -13,139 +13,139 @@ import threading
 import time
 from app.server import start_server
 
-# 로거 가져오기
+# Get logger
 logger = logging.getLogger("portfolio_optimization")
 
-# 시각화 스타일 설정
+# Set visualization style
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (14, 8)
 plt.rcParams['font.size'] = 12
 
 def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
     """
-    학습된 모델을 평가하고 포트폴리오 가치 추이를 시각화합니다.
+    Evaluates the trained model and visualizes portfolio value trends.
     
     Args:
-        model_path: 학습된 모델 경로
-        seed: 평가에 사용할 시드
-        initial_capital: 초기 투자 금액
-        debug: 디버깅 정보 출력 여부
+        model_path: Path to the trained model
+        seed: Seed to use for evaluation
+        initial_capital: Initial investment amount
+        debug: Whether to output debugging information
     """
-    # 환경 생성
-    logger.info(f"모델 평가 시작: {model_path} (시드: {seed})")
+    # Create environment
+    logger.info(f"Starting model evaluation: {model_path} (seed: {seed})")
     env = PortfolioEnv(seed=seed)
     
-    # 모델 로드
+    # Load model
     model = PPO.load(model_path)
-    logger.info(f"모델 로드 완료: {model_path}")
+    logger.info(f"Model loaded successfully: {model_path}")
     
-    # 평가 실행
+    # Run evaluation
     obs, _ = env.reset()
     done = False
     
-    # 결과 저장용 리스트
+    # Lists for storing results
     dates = []
     portfolio_values = []
     returns = []
     vols = []
     weights_history = []
-    turnovers = []  # 여기서 turnovers 리스트 초기화
+    turnovers = []  # Initialize turnovers list here
     
-    # 날짜 데이터 생성 (시나리오에서 사용된 날짜 정보가 없으므로 임의로 생성)
+    # Create date data (arbitrary creation since scenario doesn't have date information)
     start_date = datetime(2022, 1, 1)
     
-    # 에피소드 실행
+    # Run episode
     step = 0
     portfolio_value = initial_capital
     
-    logger.info("시뮬레이션 시작...")
+    logger.info("Starting simulation...")
     while not done:
-        # 모델의 행동 예측
+        # Predict model action
         action, _ = model.predict(obs, deterministic=True)
         
-        # 행동 정규화: 가중치 합이 0이 되도록 함
+        # Normalize action: make weights sum to 0
         action = action - np.mean(action)
         action = action / (np.sum(np.abs(action)) + 1e-8)
         
-        # 환경에서 한 스텝 진행
+        # Take a step in the environment
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
         
-        # 날짜 추가
+        # Add date
         current_date = start_date + pd.Timedelta(days=step)
         dates.append(current_date)
         
-        # 포트폴리오 가치 계산 및 추가
-        daily_return = info["portfolio_return"]  # 이미 소수점 형태 (예: 0.01 = 1%)
+        # Calculate and add portfolio value
+        daily_return = info["portfolio_return"]  # Already in decimal form (e.g., 0.01 = 1%)
         turnover = info["turnover"]
-        turnovers.append(turnover)  # 턴오버를 리스트에 추가
+        turnovers.append(turnover)  # Add turnover to the list
         
-        # 거래비용 계산 (턴오버에 비례하는 거래비용)
+        # Calculate transaction cost (proportional to turnover)
         transaction_cost = 0.001 * turnover
         
-        # 순 수익률 계산 및 포트폴리오 가치 업데이트
+        # Calculate net return and update portfolio value
         net_return = daily_return - transaction_cost
         portfolio_value *= (1 + net_return)
         
         portfolio_values.append(portfolio_value)
         
-        # 수익률과 변동성 저장
+        # Store returns and volatility
         returns.append(daily_return)
         vols.append(info["portfolio_vol"])
         
-        # 가중치 저장
+        # Store weights
         weights_history.append(env.previous_action)
         
-        # 첫 번째 스텝에서 자세한 디버깅 정보 출력
+        # Output detailed debugging info for the first step
         if step == 0:
-            logger.info("\n===== 첫 번째 스텝 디버깅 =====")
-            logger.info(f"원본 일별 수익률: {daily_return * 100:.4f}%")
-            logger.info(f"스케일 조정 후 수익률: {daily_return:.6f}")
-            logger.info(f"거래비용: {transaction_cost:.6f}")
-            logger.info(f"순 수익률: {net_return:.6f}")
-            logger.info(f"포트폴리오 가치 변화: {initial_capital:.2f} -> {portfolio_value:.2f}")
+            logger.info("\n===== First Step Debugging =====")
+            logger.info(f"Original daily return: {daily_return * 100:.4f}%")
+            logger.info(f"Return after scale adjustment: {daily_return:.6f}")
+            logger.info(f"Transaction cost: {transaction_cost:.6f}")
+            logger.info(f"Net return: {net_return:.6f}")
+            logger.info(f"Portfolio value change: {initial_capital:.2f} -> {portfolio_value:.2f}")
         
         step += 1
         
-        # 진행 로그 (20% 간격으로)
+        # Progress log (at 20% intervals)
         if step % (env.max_steps // 5) == 0:
-            logger.info(f"시뮬레이션 진행: {step}/{env.max_steps} ({step/env.max_steps*100:.1f}%)")
+            logger.info(f"Simulation progress: {step}/{env.max_steps} ({step/env.max_steps*100:.1f}%)")
     
-    logger.info(f"시뮬레이션 완료: 총 {step}일 실행")
+    logger.info(f"Simulation completed: ran for {step} days")
     
-    # 디버깅 정보 출력
+    # Output debugging information
     if debug:
-        logger.info("\n===== 디버깅 정보 =====")
-        logger.info(f"첫 10개 일별 수익률: {returns[:10]}")
-        logger.info(f"첫 10개 포트폴리오 가치: {portfolio_values[:10]}")
-        logger.info(f"첫 10개 변동성: {vols[:10]}")
-        logger.info(f"첫 10개 가중치: {weights_history[:10]}")
+        logger.info("\n===== Debugging Information =====")
+        logger.info(f"First 10 daily returns: {returns[:10]}")
+        logger.info(f"First 10 portfolio values: {portfolio_values[:10]}")
+        logger.info(f"First 10 volatilities: {vols[:10]}")
+        logger.info(f"First 10 weights: {weights_history[:10]}")
         
-        # 수익률 통계
-        logger.info(f"\n수익률 통계:")
-        logger.info(f"최소: {min(returns):.4f}%, 최대: {max(returns):.4f}%, 평균: {np.mean(returns):.4f}%")
-        logger.info(f"표준편차: {np.std(returns):.4f}%")
+        # Return statistics
+        logger.info(f"\nReturn Statistics:")
+        logger.info(f"Min: {min(returns):.4f}%, Max: {max(returns):.4f}%, Mean: {np.mean(returns):.4f}%")
+        logger.info(f"Standard Deviation: {np.std(returns):.4f}%")
         
-        # 이상치 확인
-        outliers = [r for r in returns if abs(r) > 5.0]  # 5% 이상의 일별 수익률은 이상치로 간주
+        # Check for outliers
+        outliers = [r for r in returns if abs(r) > 5.0]  # Consider daily returns over 5% as outliers
         if outliers:
-            logger.info(f"\n이상치 수익률 ({len(outliers)}개): {outliers}")
+            logger.info(f"\nOutlier returns ({len(outliers)}): {outliers}")
         
-        # 데이터 스케일 확인
-        logger.info("\n===== 데이터 스케일 확인 =====")
+        # Check data scale
+        logger.info("\n===== Data Scale Check =====")
         stock_returns_scale = []
-        for i in range(10):  # 10개 주식 각각의 수익률 범위 확인
-            returns_idx = i * 4  # 수익률은 첫 번째 특성
+        for i in range(10):  # Check return range for each of 10 stocks
+            returns_idx = i * 4  # Return is the first feature
             stock_returns = [env.market_data[j, returns_idx] for j in range(len(env.market_data))]
-            logger.info(f"주식 {i+1} 수익률 범위: {min(stock_returns):.4f} ~ {max(stock_returns):.4f}, 평균: {np.mean(stock_returns):.4f}")
+            logger.info(f"Stock {i+1} return range: {min(stock_returns):.4f} ~ {max(stock_returns):.4f}, Mean: {np.mean(stock_returns):.4f}")
             stock_returns_scale.append((min(stock_returns), max(stock_returns), np.mean(stock_returns)))
         
-        # 원본 시장 데이터의 일부 샘플 출력
-        logger.info("\n원본 시장 데이터 샘플 (처음 3일):")
+        # Output sample of original market data
+        logger.info("\nOriginal market data sample (first 3 days):")
         for day in range(min(3, len(env.market_data))):
-            logger.info(f"Day {day+1}: {env.market_data[day, :10]}")  # 처음 10개 값만 출력
+            logger.info(f"Day {day+1}: {env.market_data[day, :10]}")  # Only output first 10 values
     
-    # 결과 데이터프레임 생성
+    # Create results dataframe
     results = pd.DataFrame({
         'Date': dates,
         'Portfolio_Value': portfolio_values,
@@ -153,10 +153,10 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
         'Volatility': vols
     })
     
-    # 누적 수익률 계산
+    # Calculate cumulative return
     results['Cumulative_Return'] = (results['Portfolio_Value'] / initial_capital - 1) * 100
     
-    # 일별 수익률 로그를 CSV 파일로 저장
+    # Save daily return log to CSV file
     daily_returns_df = pd.DataFrame({
         'Date': dates,
         'Daily_Return': returns,
@@ -164,47 +164,47 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
         'Portfolio_Value': portfolio_values
     })
     daily_returns_df.to_csv('daily_returns_log.csv', index=False)
-    logger.info(f"\n일별 수익률 로그가 'daily_returns_log.csv' 파일로 저장되었습니다.")
+    logger.info(f"\nDaily returns log has been saved to 'daily_returns_log.csv'")
     
-    # 성과 지표 계산
+    # Calculate performance metrics
     total_return = (portfolio_values[-1] / initial_capital - 1) * 100
     annualized_return = ((1 + total_return/100) ** (252/len(portfolio_values)) - 1) * 100
     
-    # 순 수익률 계산 (거래비용 차감 후)
+    # Calculate net returns (after transaction costs)
     net_returns = [r - 0.001 * t/100.0 for r, t in zip(returns, turnovers)]
     
-    # 연간화된 변동성 계산 - 순 수익률 기준
-    net_returns_array = np.array(net_returns) * 100  # 퍼센트로 변환
+    # Calculate annualized volatility - based on net returns
+    net_returns_array = np.array(net_returns) * 100  # Convert to percentage
     daily_std = np.std(net_returns_array)
     annualized_vol = daily_std * np.sqrt(252)
     
-    # 무위험 이자율 계산
-    # 평가 단계에서는 일관성을 위해 고정 값 사용
-    # 실제 문제에서는 시장 데이터를 활용하는 것이 좋지만, 
-    # 비교 평가를 위해 일정한 값 사용
-    annual_risk_free_rate = 2.0  # 연 2% 가정
+    # Calculate risk-free rate
+    # Use a fixed value for consistency in evaluation
+    # In a real problem, market data should be used,
+    # but a constant value is used for comparative evaluation
+    annual_risk_free_rate = 2.0  # Assume 2% annual rate
     
-    # 샤프 비율 계산: (연간 수익률 - 무위험 이자율) / 연간 변동성
+    # Calculate Sharpe ratio: (annual return - risk-free rate) / annual volatility
     sharpe_ratio = (annualized_return - annual_risk_free_rate) / annualized_vol if annualized_vol != 0 else 0
     
     max_drawdown = calculate_max_drawdown(portfolio_values)
     
-    # 결과 출력
-    logger.info(f"\n===== 모델 평가 결과 =====")
-    logger.info(f"시드: {seed}")
-    logger.info(f"총 수익률: {total_return:.2f}%")
-    logger.info(f"연율화 수익률: {annualized_return:.2f}%")
-    logger.info(f"평균 일별 순수익률: {np.mean(net_returns) * 100:.4f}%")
-    logger.info(f"연율화 변동성: {annualized_vol:.2f}%")
-    logger.info(f"무위험 이자율: {annual_risk_free_rate:.2f}%")
-    logger.info(f"샤프 비율: {sharpe_ratio:.4f}")
-    logger.info(f"최대 낙폭: {max_drawdown:.2f}%")
+    # Output results
+    logger.info(f"\n===== Model Evaluation Results =====")
+    logger.info(f"Seed: {seed}")
+    logger.info(f"Total Return: {total_return:.2f}%")
+    logger.info(f"Annualized Return: {annualized_return:.2f}%")
+    logger.info(f"Average Daily Net Return: {np.mean(net_returns) * 100:.4f}%")
+    logger.info(f"Annualized Volatility: {annualized_vol:.2f}%")
+    logger.info(f"Risk-Free Rate: {annual_risk_free_rate:.2f}%")
+    logger.info(f"Sharpe Ratio: {sharpe_ratio:.4f}")
+    logger.info(f"Maximum Drawdown: {max_drawdown:.2f}%")
     
-    # 포트폴리오 가치 추이 시각화
-    logger.info("포트폴리오 성과 차트 생성 중...")
+    # Visualize portfolio value trend
+    logger.info("Creating portfolio performance chart...")
     plt.figure(figsize=(14, 10))
     
-    # 포트폴리오 가치 차트
+    # Portfolio value chart
     plt.subplot(2, 1, 1)
     plt.plot(results['Date'], results['Portfolio_Value'], 'b-', linewidth=2)
     plt.title('Portfolio Value Over Time', fontsize=15)
@@ -214,10 +214,10 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
     plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
     plt.xticks(rotation=45)
     
-    # 일별 수익률 차트 (순 수익률로 변경)
+    # Daily returns chart (changed to net returns)
     plt.subplot(2, 1, 2)
     
-    # 원본 수익률과 순 수익률 모두 표시
+    # Show both original returns and net returns
     plt.plot(results['Date'], returns, 'g-', alpha=0.5, linewidth=1, label='Gross Returns')
     plt.plot(results['Date'], net_returns, 'r-', linewidth=1, label='Net Returns (after costs)')
     
@@ -231,10 +231,10 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
     
     plt.tight_layout()
     plt.savefig('portfolio_performance.png')
-    logger.info("포트폴리오 성과 차트가 'portfolio_performance.png' 파일로 저장되었습니다.")
+    logger.info("Portfolio performance chart has been saved to 'portfolio_performance.png'")
     
-    # 주식별 가중치 추이 시각화
-    logger.info("포트폴리오 가중치 차트 생성 중...")
+    # Visualize stock weight trends
+    logger.info("Creating portfolio weights chart...")
     plt.figure(figsize=(14, 8))
     weights_array = np.array(weights_history)
     
@@ -251,13 +251,13 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
     
     plt.tight_layout()
     plt.savefig('portfolio_weights.png')
-    logger.info("포트폴리오 가중치 차트가 'portfolio_weights.png' 파일로 저장되었습니다.")
-    logger.info("모델 평가 완료")
+    logger.info("Portfolio weights chart has been saved to 'portfolio_weights.png'")
+    logger.info("Model evaluation completed")
     
     return results, weights_array
 
 def calculate_max_drawdown(portfolio_values):
-    """최대 낙폭(Maximum Drawdown) 계산"""
+    """Calculate Maximum Drawdown"""
     peak = portfolio_values[0]
     max_dd = 0
     
@@ -271,18 +271,18 @@ def calculate_max_drawdown(portfolio_values):
     return max_dd
 
 def compare_models(model_paths, seeds=[1234, 5678, 9012], initial_capital=10000):
-    """여러 모델의 성능을 비교합니다."""
-    logger.info(f"모델 비교 시작: {model_paths}")
+    """Compare the performance of multiple models."""
+    logger.info(f"Starting model comparison: {model_paths}")
     all_results = []
     
     for model_path in model_paths:
         model_name = os.path.basename(model_path)
-        logger.info(f"\n----- 모델 평가: {model_name} -----")
+        logger.info(f"\n----- Evaluating Model: {model_name} -----")
         
-        # 여러 시드에 대해 평가
+        # Evaluate across multiple seeds
         seed_results = []
         for seed in seeds:
-            logger.info(f"시드 {seed} 평가 중...")
+            logger.info(f"Evaluating with seed {seed}...")
             env = PortfolioEnv(seed=seed)
             model = PPO.load(model_path)
             
@@ -295,32 +295,32 @@ def compare_models(model_paths, seeds=[1234, 5678, 9012], initial_capital=10000)
             while not done:
                 action, _ = model.predict(obs, deterministic=True)
                 
-                # 행동 정규화: 환경의 step 메서드와 동일하게 처리
+                # Normalize action: same as in the environment's step method
                 action = action - np.mean(action)
                 action = action / (np.sum(np.abs(action)) + 1e-8)
                 
                 obs, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
                 
-                # 일별 수익률 계산 - 소수점 단위로 변환
-                daily_return = info["portfolio_return"]  # 이미 소수점 형태 (예: 0.01 = 1%)
+                # Calculate daily return - convert to decimal
+                daily_return = info["portfolio_return"]  # Already in decimal form (e.g., 0.01 = 1%)
                 turnover = info["turnover"]
                 
-                # 거래비용 계산
+                # Calculate transaction cost
                 transaction_cost = 0.001 * turnover
                 
-                # 순 수익률 적용
+                # Apply net return
                 net_return = daily_return - transaction_cost
                 portfolio_value *= (1 + net_return)
                 
                 portfolio_values.append(portfolio_value)
             
-            # 성과 지표 계산
+            # Calculate performance metrics
             total_return = (portfolio_values[-1] / initial_capital - 1) * 100
             seed_results.append(total_return)
-            logger.info(f"시드 {seed} 평가 결과: 수익률 {total_return:.2f}%")
+            logger.info(f"Seed {seed} evaluation result: Return {total_return:.2f}%")
         
-        # 평균 및 표준편차 계산
+        # Calculate average and standard deviation
         avg_return = np.mean(seed_results)
         std_return = np.std(seed_results)
         
@@ -332,18 +332,18 @@ def compare_models(model_paths, seeds=[1234, 5678, 9012], initial_capital=10000)
             'Max_Return': max(seed_results)
         })
         
-        logger.info(f"모델 {model_name} 평가 완료:")
-        logger.info(f"  평균 수익률: {avg_return:.2f}%")
-        logger.info(f"  표준편차: {std_return:.2f}%")
-        logger.info(f"  최소/최대: {min(seed_results):.2f}% / {max(seed_results):.2f}%")
+        logger.info(f"Model {model_name} evaluation completed:")
+        logger.info(f"  Average Return: {avg_return:.2f}%")
+        logger.info(f"  Standard Deviation: {std_return:.2f}%")
+        logger.info(f"  Min/Max: {min(seed_results):.2f}% / {max(seed_results):.2f}%")
     
-    # 결과 데이터프레임 생성 및 출력
+    # Create and output results dataframe
     results_df = pd.DataFrame(all_results)
-    logger.info("\n===== 모델 비교 결과 =====")
+    logger.info("\n===== Model Comparison Results =====")
     logger.info(f"\n{results_df}")
     
-    # 결과 시각화
-    logger.info("모델 비교 차트 생성 중...")
+    # Visualize results
+    logger.info("Creating model comparison chart...")
     plt.figure(figsize=(12, 6))
     plt.bar(results_df['Model'], results_df['Avg_Return'], yerr=results_df['Std_Return'], 
             capsize=5, color='skyblue', alpha=0.7)
@@ -354,20 +354,20 @@ def compare_models(model_paths, seeds=[1234, 5678, 9012], initial_capital=10000)
     
     plt.tight_layout()
     plt.savefig('model_comparison.png')
-    logger.info("모델 비교 차트가 'model_comparison.png' 파일로 저장되었습니다.")
+    logger.info("Model comparison chart has been saved to 'model_comparison.png'")
     
     return results_df
 
 def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000):
-    """다양한 시드에서 모델의 강건성을 평가합니다."""
-    logger.info(f"강건성 평가 시작: {model_path}, 테스트 시드: {len(seeds)}개")
+    """Evaluate model robustness across various seeds."""
+    logger.info(f"Starting robustness evaluation: {model_path}, Test seeds: {len(seeds)}")
     results = []
     
     for i, seed in enumerate(seeds):
         try:
-            # 진행 상황 로깅
+            # Log progress
             if i % 10 == 0:
-                logger.info(f"강건성 평가 진행: {i}/{len(seeds)} ({i/len(seeds)*100:.1f}%)")
+                logger.info(f"Robustness evaluation progress: {i}/{len(seeds)} ({i/len(seeds)*100:.1f}%)")
                 
             env = PortfolioEnv(seed=seed)
             model = PPO.load(model_path)
@@ -385,7 +385,7 @@ def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000
                 obs, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
                 
-                daily_return = info["portfolio_return"]  # 이미 소수점 형태 (예: 0.01 = 1%)
+                daily_return = info["portfolio_return"]  # Already in decimal form (e.g., 0.01 = 1%)
                 turnover = info["turnover"]
                 transaction_cost = 0.001 * turnover
                 
@@ -395,24 +395,24 @@ def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000
             total_return = (portfolio_value / initial_capital - 1) * 100
             results.append(total_return)
             
-            # 매 20번째 시드마다 간략한 결과 로깅
+            # Log brief results every 20 seeds
             if i % 20 == 19:
-                logger.info(f"시드 {seed}: 수익률 {total_return:.2f}%")
+                logger.info(f"Seed {seed}: Return {total_return:.2f}%")
         
         except Exception as e:
-            logger.error(f"시드 {seed} 평가 중 오류: {e}")
+            logger.error(f"Error during seed {seed} evaluation: {e}")
             continue
     
-    # 결과 요약
+    # Summarize results
     if results:
-        logger.info(f"\n===== 강건성 평가 결과 ({len(results)}개 시드) =====")
-        logger.info(f"평균 수익률: {np.mean(results):.2f}%")
-        logger.info(f"수익률 표준편차: {np.std(results):.2f}%")
-        logger.info(f"최소 수익률: {min(results):.2f}%")
-        logger.info(f"최대 수익률: {max(results):.2f}%")
+        logger.info(f"\n===== Robustness Evaluation Results ({len(results)} seeds) =====")
+        logger.info(f"Average Return: {np.mean(results):.2f}%")
+        logger.info(f"Return Standard Deviation: {np.std(results):.2f}%")
+        logger.info(f"Minimum Return: {min(results):.2f}%")
+        logger.info(f"Maximum Return: {max(results):.2f}%")
         
-        # 히스토그램으로 시각화
-        logger.info("수익률 분포 히스토그램 생성 중...")
+        # Visualize with histogram
+        logger.info("Creating return distribution histogram...")
         plt.figure(figsize=(10, 6))
         plt.hist(results, bins=20, alpha=0.7)
         plt.title('Return Distribution Across Different Seeds')
@@ -420,14 +420,14 @@ def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000
         plt.ylabel('Frequency')
         plt.grid(True, alpha=0.3)
         plt.savefig('return_distribution.png')
-        logger.info("수익률 분포 히스토그램이 'return_distribution.png' 파일로 저장되었습니다.")
+        logger.info("Return distribution histogram has been saved to 'return_distribution.png'")
     else:
-        logger.warning("평가 결과가 없습니다.")
+        logger.warning("No evaluation results available.")
     
     return results
 
 def start_evaluation_server():
-    """평가 서버 시작"""
+    """Start evaluation server"""
     app = start_server()
     
     import uvicorn
@@ -436,30 +436,30 @@ def start_evaluation_server():
 if __name__ == "__main__":
     try:
         logger.info("="*50)
-        logger.info("포트폴리오 최적화 모델 평가 시작")
+        logger.info("Starting Portfolio Optimization Model Evaluation")
         logger.info("="*50)
         
-        # FastAPI 웹 서버를 별도 스레드로 실행
+        # Run FastAPI web server in a separate thread
         server_thread = threading.Thread(target=start_evaluation_server)
-        server_thread.daemon = True  # 메인 스레드가 종료되면 함께 종료
+        server_thread.daemon = True  # Terminate with main thread
         server_thread.start()
         
-        logger.info("웹 인터페이스가 http://localhost:8000 에서 실행 중입니다")
-        time.sleep(1)  # 서버가 시작할 시간 부여
+        logger.info("Web interface is running at http://localhost:8000")
+        time.sleep(1)  # Give server time to start
         
-        # 단일 모델 평가
-        model_path = "ppo_portfolio_best"  # 또는 "ppo_portfolio_best"
+        # Evaluate single model
+        model_path = "ppo_portfolio_best"  # or "ppo_portfolio_best"
         results, weights = evaluate_model(model_path, seed=1234)
         
-        # 여러 모델 비교 (선택적)
+        # Compare multiple models (optional)
         # model_paths = ["ppo_portfolio", "ppo_portfolio_best", "save/ppo_portfolio_best_v1"]
         # compare_results = compare_models(model_paths)
         
-        # 강건성 평가 (선택적)
+        # Robustness evaluation (optional)
         # robust_results = robust_evaluation(model_path, seeds=range(1000, 1050))
         
-        logger.info("모델 평가 완료")
+        logger.info("Model evaluation completed")
         
     except Exception as e:
-        logger.error(f"모델 평가 중 오류 발생: {str(e)}")
+        logger.error(f"Error during model evaluation: {str(e)}")
         logger.error(traceback.format_exc())

@@ -5,12 +5,18 @@ This is the main entry point for the portfolio optimization web interface.
 It starts a FastAPI server that provides a user interface for training and
 evaluating portfolio optimization models.
 """
-from app.server import start_server
+import logging
+import uvicorn
+from app.server import setup_app
 
-def main():
+# Create FastAPI app
+app = setup_app()
+logger = logging.getLogger("portfolio_optimization")
+
+def main(host="127.0.0.1", port=8000):
     """Start the portfolio optimization web interface"""
-    print("Starting Portfolio Optimization Web Interface...")
-    start_server(host="127.0.0.1", port=8000)
+    logger.info(f"Web interface running at http://{host}:{port}")
+    uvicorn.run("main:app", host=host, port=port, log_level="info", reload=True)
 
 if __name__ == "__main__":
     main()
