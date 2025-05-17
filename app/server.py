@@ -405,7 +405,7 @@ async def stream_logs():
                         yield f"data: {json.dumps(heartbeat)}\n\n"
                     
                     # Short delay for socket stability
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.0)
                 except Exception as e:
                     logger.error(f"Stream processing error: {str(e)}")
                     # Continue after short delay
