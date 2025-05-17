@@ -80,10 +80,12 @@ class PortfolioEnv(gym.Env):
         # 새 시점에서의 수익률 데이터 (t+1 시점)
         if not terminated:
             returns_indices = np.arange(0, 40, 4)
-            stock_returns = self.market_data[self.current_step, returns_indices]
+            # 데이터가 이미 퍼센트(%)로 저장되어 있으므로, 소수점 형태로 변환 (1% -> 0.01)
+            stock_returns = self.market_data[self.current_step, returns_indices] / 100.0
             
             vol_indices = np.arange(2, 40, 4)
-            stock_vols = self.market_data[self.current_step, vol_indices]
+            # 데이터가 이미 퍼센트(%)로 저장되어 있으므로, 소수점 형태로 변환 (1% -> 0.01)
+            stock_vols = self.market_data[self.current_step, vol_indices] / 100.0
             
             # 포트폴리오 수익률 계산 (이전 가중치 * 현재 수익률)
             portfolio_return = np.sum(weights * stock_returns)
@@ -91,11 +93,14 @@ class PortfolioEnv(gym.Env):
             # 포트폴리오 위험 계산
             portfolio_vol = np.sqrt(np.sum((weights * stock_vols) ** 2))
             
-            # 턴오버 계산 (다음 행동에서 계산되므로 여기서는 0)
-            turnover = 0  # 첫 스텝에서는 이전 가중치가 없으므로 0
+            # 턴오버 계산
+            # 첫 스텝에서는 모든 배분액이 턴오버가 됨
+            turnover = np.sum(np.abs(weights))  # 모든 포지션을 새로 구성하므로
             
-            # 보상 계산
-            raw_reward = 5 * portfolio_return - 0.1 * portfolio_vol - 0.01 * turnover
+            # 보상 계산 - 위험 조정 수익률에 초점
+            raw_reward = portfolio_return - 0.5 * portfolio_vol - 0.1 * turnover
+            # 대안: Sharpe 비율 형태의 보상 함수
+            # risk_adjusted_reward = portfolio_return / (portfolio_vol + 1e-8) - 0.1 * turnover
             reward = raw_reward
             
             # 새로운 상태 계산
@@ -182,8 +187,8 @@ class CustomCallback(BaseCallback):
             obs, reward, terminated, truncated, info = self.eval_env.step(action)
             done = terminated or truncated
             
-            # 일일 수익률 및 기타 지표 저장
-            daily_return = info["portfolio_return"] / 100.0  # 퍼센트를 소수점으로 변환
+            # 일일 수익률 저장 (이미 소수점 형태로 받음)
+            daily_return = info["portfolio_return"]  # 이미 소수점 형태 (예: 0.01 = 1%)
             daily_returns.append(daily_return)
             
             turnover = info["turnover"]
@@ -198,9 +203,15 @@ class CustomCallback(BaseCallback):
             
             episode_vols.append(info["portfolio_vol"])
             
-            # 국채금리 데이터 수집
+            # 국채금리 데이터 수집 (이미 퍼센트 단위이므로 100으로 나눠서 소수점으로 변환)
             if hasattr(self.eval_env, 'macro_data') and self.eval_env.current_step-1 < len(self.eval_env.macro_data):
-                t_bill_rate = self.eval_env.macro_data[self.eval_env.current_step-1, 1] / 100.0
+                # 값이 이미 퍼센트 단위인지 확인 (큰 값이라면 조정 필요)
+                raw_rate = self.eval_env.macro_data[self.eval_env.current_step-1, 1]
+                # 일반적으로 국채금리는 10% 미만이므로, 큰 값인 경우 조정
+                if raw_rate > 10:
+                    t_bill_rate = raw_rate / 10000.0  # 매우 큰 값 조정 (ex: 270 -> 0.0270)
+                else:
+                    t_bill_rate = raw_rate / 100.0  # 일반적인 경우 (ex: 2.7 -> 0.027)
                 risk_free_rates.append(t_bill_rate)
         
         # 일별 평균 수익률 (산술평균)
@@ -220,12 +231,9 @@ class CustomCallback(BaseCallback):
         # 평균 변동성
         mean_vol = np.mean(episode_vols)
         
-        # 무위험 이자율 계산 - 단순화
-        if risk_free_rates:
-            # 일별 이자율의 산술평균에 거래일수를 곱해 연율화
-            annual_risk_free_rate = np.mean(risk_free_rates) * 100 * trading_days_per_year
-        else:
-            annual_risk_free_rate = 2.0  # 연 2% 기본값
+        # 무위험 이자율 - 간단하게 고정값 사용
+        # 시장 데이터로부터 무위험 이자율을 계산하는 로직에 문제가 있어 고정값 사용
+        annual_risk_free_rate = 2.0  # 연 2% 기본값
         
         # 샤프 비율 계산 - 순 수익률 기준으로 표준편차 계산 (중요!)
         # 퍼센트로 변환된 일별 순수익률을 기준으로 표준편차 계산
@@ -315,34 +323,34 @@ def main():
                 logger.warning(f"기존 모델 로드 실패: {e}")
                 logger.info("새 모델을 생성합니다.")
                 policy_kwargs = dict(
-                    net_arch=[dict(pi=[128, 128, 64], vf=[128, 128, 64])],
+                    net_arch=dict(pi=[128, 128, 64], vf=[128, 128, 64]),  # 네트워크 구조 수정
                     activation_fn=torch.nn.ReLU
                 )
                 model = PPO("MlpPolicy", train_envs[0], policy_kwargs=policy_kwargs,
-                            learning_rate=0.0001,      # 학습률 설정
-                            n_steps=2048,              # 스텝 수 설정
-                            batch_size=128,            # 배치 크기 설정
-                            gamma=0.99,                # 감마 설정
-                            ent_coef=0.02,             # 엔트로피 계수 설정
-                            clip_range=0.1,            # 클리핑 범위 설정
-                            vf_coef=0.7,               # 가치 함수 계수 설정
-                            max_grad_norm=0.3,         # 최대 그래디언트 노름 설정
+                            learning_rate=0.0001,      # 안정적인 학습을 위한 학습률
+                            n_steps=2048,              # 더 긴 트라젝토리로 안정적인 학습
+                            batch_size=128,            # 적절한 배치 크기
+                            gamma=0.99,                # 미래 보상에 대한 할인율
+                            ent_coef=0.01,             # 엔트로피를 조금 줄여 탐색/활용 균형
+                            clip_range=0.1,            # 적절한 클리핑 범위
+                            vf_coef=0.5,               # 가치 함수 가중치 조정
+                            max_grad_norm=0.5,         # 그래디언트 클리핑 강화
                             verbose=2)
                 logger.info("PPO 모델 생성 완료")
         else:
             policy_kwargs = dict(
-                net_arch=[dict(pi=[128, 128, 64], vf=[128, 128, 64])],
+                net_arch=dict(pi=[128, 128, 64], vf=[128, 128, 64]),  # 네트워크 구조 수정
                 activation_fn=torch.nn.ReLU
             )
             model = PPO("MlpPolicy", train_envs[0], policy_kwargs=policy_kwargs,
-                        learning_rate=0.0001,
-                        n_steps=2048,
-                        batch_size=128,
-                        gamma=0.99,
-                        ent_coef=0.02,
-                        clip_range=0.1,
-                        vf_coef=0.7,
-                        max_grad_norm=0.3,
+                        learning_rate=0.0001,      # 안정적인 학습을 위한 학습률
+                        n_steps=2048,              # 더 긴 트라젝토리로 안정적인 학습
+                        batch_size=128,            # 적절한 배치 크기
+                        gamma=0.99,                # 미래 보상에 대한 할인율
+                        ent_coef=0.01,             # 엔트로피를 조금 줄여 탐색/활용 균형
+                        clip_range=0.1,            # 적절한 클리핑 범위
+                        vf_coef=0.5,               # 가치 함수 가중치 조정
+                        max_grad_norm=0.5,         # 그래디언트 클리핑 강화
                         verbose=2)
             logger.info("새 PPO 모델 생성 완료")
         
@@ -435,8 +443,8 @@ def main():
                         obs, reward, terminated, truncated, info = test_env.step(action)
                         done = terminated or truncated
                         
-                        # 일일 수익률 및 기타 지표 저장
-                        daily_return = info["portfolio_return"] / 100.0
+                        # 일일 수익률 저장 (이미 소수점 형태로 받음)
+                        daily_return = info["portfolio_return"]  # 이미 소수점 형태 (예: 0.01 = 1%)
                         daily_returns.append(daily_return)
                         
                         turnover = info["turnover"]

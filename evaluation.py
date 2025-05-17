@@ -76,7 +76,7 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
         dates.append(current_date)
         
         # 포트폴리오 가치 계산 및 추가
-        daily_return = info["portfolio_return"] / 100.0
+        daily_return = info["portfolio_return"]  # 이미 소수점 형태 (예: 0.01 = 1%)
         turnover = info["turnover"]
         turnovers.append(turnover)  # 턴오버를 리스트에 추가
         
@@ -178,7 +178,10 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
     daily_std = np.std(net_returns_array)
     annualized_vol = daily_std * np.sqrt(252)
     
-    # 무위험 이자율 계산 (간략화)
+    # 무위험 이자율 계산
+    # 평가 단계에서는 일관성을 위해 고정 값 사용
+    # 실제 문제에서는 시장 데이터를 활용하는 것이 좋지만, 
+    # 비교 평가를 위해 일정한 값 사용
     annual_risk_free_rate = 2.0  # 연 2% 가정
     
     # 샤프 비율 계산: (연간 수익률 - 무위험 이자율) / 연간 변동성
@@ -299,8 +302,8 @@ def compare_models(model_paths, seeds=[1234, 5678, 9012], initial_capital=10000)
                 obs, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
                 
-                # 일별 수익률 계산 - 100으로 나누어 소수점 단위로 변환
-                daily_return = info["portfolio_return"] / 100.0
+                # 일별 수익률 계산 - 소수점 단위로 변환
+                daily_return = info["portfolio_return"]  # 이미 소수점 형태 (예: 0.01 = 1%)
                 turnover = info["turnover"]
                 
                 # 거래비용 계산
@@ -382,7 +385,7 @@ def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000
                 obs, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
                 
-                daily_return = info["portfolio_return"] / 100.0
+                daily_return = info["portfolio_return"]  # 이미 소수점 형태 (예: 0.01 = 1%)
                 turnover = info["turnover"]
                 transaction_cost = 0.001 * turnover
                 

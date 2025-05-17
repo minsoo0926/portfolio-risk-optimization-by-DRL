@@ -740,7 +740,7 @@ async def stream_logs():
                     yield f"data: {json.dumps(heartbeat)}\n\n"
                 
                 # 짧은 딜레이
-                await asyncio.sleep(0.1)
+                # await asyncio.sleep(0.1)
             except Exception as e:
                 logger.error(f"스트림 에러: {str(e)}")
                 break

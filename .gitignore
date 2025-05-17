@@ -40,6 +40,7 @@ temp/
 *.tmp
 *.bak
 *.swp
+*.zip
 
 # Saved models (optional - consider if you want to keep these in version control)
 # If models are too large, exclude them
