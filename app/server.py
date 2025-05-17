@@ -78,46 +78,55 @@ def run_training():
     logger.info("="*50)
     
     try:
-        # Run training process
-        current_process = subprocess.Popen(
-            ["python", "-c", "from train import main; main()"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
-        )
-        
-        # Log output in separate thread
-        def log_output(process):
+        # 무한 루프로 학습을 실행하는 함수
+        def continuous_training():
             global current_process, is_training
             try:
-                for line in iter(process.stdout.readline, ''):
-                    if line:
-                        logger.info(line.strip())
+                while is_training:
+                    # 학습 프로세스 실행
+                    process = subprocess.Popen(
+                        ["python", "-c", "from train import main; main()"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1
+                    )
+                    
+                    # 현재 프로세스 업데이트
+                    current_process = process
+                    
+                    # 출력 로깅
+                    for line in iter(process.stdout.readline, ''):
+                        if line and is_training:
+                            logger.info(line.strip())
+                    
+                    # 프로세스 완료 확인
+                    if process.poll() is not None:
+                        if process.returncode == 0:
+                            logger.info("Training cycle completed successfully")
+                        else:
+                            logger.error(f"Training cycle failed: exit code {process.returncode}")
+                    
+                    # 다음 학습 사이클 전에 60초 대기
+                    logger.info("Waiting 60 seconds before starting next training cycle...")
+                    time.sleep(60)
+                    
+                    # 학습이 중지되었는지 확인
+                    if not is_training:
+                        break
                 
-                # Update status when process completes
-                if process.poll() is not None:
-                    if process.returncode == 0:
-                        logger.info("Training completed successfully")
-                    else:
-                        logger.error(f"Training failed: exit code {process.returncode}")
-                    
-                    # Update global variables
-                    current_process = None
-                    is_training = False
-                    
             except Exception as e:
-                logger.error(f"Error processing logs: {str(e)}")
+                logger.error(f"Error in continuous training: {str(e)}")
                 current_process = None
                 is_training = False
         
-        # Start logging thread
-        log_thread = threading.Thread(target=log_output, args=(current_process,))
-        log_thread.daemon = True
-        log_thread.start()
+        # 무한 학습 스레드 시작
+        training_thread = threading.Thread(target=continuous_training)
+        training_thread.daemon = True
+        training_thread.start()
         
-        # Return immediately to run in background
-        return {"status": "success", "message": "Training started."}
+        # 즉시 반환하여 백그라운드에서 실행
+        return {"status": "success", "message": "Continuous training started."}
         
     except Exception as e:
         logger.error(f"Error starting training: {str(e)}")
