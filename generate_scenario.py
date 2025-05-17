@@ -7,7 +7,7 @@ sp500_tickers = ['MMM', 'AOS', 'ABT', 'ABBV', 'ACN', 'ADBE', 'AMD', 'AES', 'AFL'
 def generate_scenario(n:int, seed = 42):
     # Number of stocks to select
     
-    # random.seed(seed%100)
+    random.seed(int(seed))
 
     # Randomly select n stocks from the S&P 500 tickers
     selected_tickers = random.sample(sp500_tickers, n)
