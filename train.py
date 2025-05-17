@@ -7,6 +7,15 @@ from generate_scenario import generate_scenario
 import os
 import time
 import torch
+import datetime
+import logging
+import traceback
+import asyncio
+import threading
+from utils import get_logger, start_server
+
+# 로거 가져오기
+logger = get_logger()
 
 # 사용자 정의 환경
 class PortfolioEnv(gym.Env):
@@ -109,10 +118,10 @@ class PortfolioEnv(gym.Env):
 
     def render(self, mode="human"):
         if mode == "human":
-            print(f"Step: {self.current_step}, Portfolio weights: {self.previous_action}")
+            logger.info(f"Step: {self.current_step}, Portfolio weights: {self.previous_action}")
         return 1
 
-# CustomCallback 클래스를 main 함수 밖으로 이동
+# CustomCallback 클래스
 class CustomCallback(BaseCallback):
     def __init__(self, eval_env, verbose=0, save_freq=10000, eval_freq=20000, model_path="ppo_portfolio"):
         super(CustomCallback, self).__init__(verbose)
@@ -126,7 +135,7 @@ class CustomCallback(BaseCallback):
         # temp 디렉토리가 없으면 생성
         if not os.path.exists('temp'):
             os.makedirs('temp')
-            print("temp 폴더를 생성했습니다.")
+            logger.info("temp 폴더를 생성했습니다.")
         
     def _on_step(self):
         try:
@@ -135,7 +144,7 @@ class CustomCallback(BaseCallback):
                 # temp 폴더에 중간 모델 저장
                 temp_model_path = os.path.join('temp', f"{self.model_path}_{self.num_timesteps}")
                 self.model.save(temp_model_path)
-                print(f"Timestep {self.num_timesteps}: 모델 저장 완료 (temp/{self.model_path}_{self.num_timesteps})")
+                logger.info(f"Timestep {self.num_timesteps}: 모델 저장 완료 (temp/{self.model_path}_{self.num_timesteps})")
             
             # 주기적으로 모델 성능 평가
             if self.num_timesteps % self.eval_freq == 0:
@@ -147,13 +156,13 @@ class CustomCallback(BaseCallback):
                 
             return True
         except Exception as e:
-            print(f"콜백 에러 발생: {str(e)}")
+            logger.error(f"콜백 에러 발생: {str(e)}")
             return False
             
     def _evaluate_model(self):
-        print("\n" + "="*50)
-        print(f"===== Timestep {self.num_timesteps} 모델 평가 =====")
-        print("="*50)
+        logger.info("="*50)
+        logger.info(f"===== Timestep {self.num_timesteps} 모델 평가 =====")
+        logger.info("="*50)
         
         # 결과 저장용 변수
         daily_returns = []  # 원본 일일 수익률
@@ -238,14 +247,14 @@ class CustomCallback(BaseCallback):
         })
         
         # 결과 출력
-        print("\n성과 지표:")
-        print(f"► 일일 평균 수익률 (거래비용 전): {mean_daily_return:.4f}%")
-        print(f"► 일일 평균 순수익률 (거래비용 후): {mean_net_return:.4f}%")
-        print(f"► 복리 계산 총 수익률: {total_return:.4f}%")
-        print(f"► 연간 환산 수익률: {annualized_return:.4f}%")
-        print(f"► 연간 무위험 이자율: {annual_risk_free_rate:.4f}%")
-        print(f"► 일별 수익률 표준편차(연간화): {annualized_std:.4f}%")
-        print(f"► Sharpe Ratio: {sharpe:.4f}")
+        logger.info("\n성과 지표:")
+        logger.info(f"► 일일 평균 수익률 (거래비용 전): {mean_daily_return:.4f}%")
+        logger.info(f"► 일일 평균 순수익률 (거래비용 후): {mean_net_return:.4f}%")
+        logger.info(f"► 복리 계산 총 수익률: {total_return:.4f}%")
+        logger.info(f"► 연간 환산 수익률: {annualized_return:.4f}%")
+        logger.info(f"► 연간 무위험 이자율: {annual_risk_free_rate:.4f}%")
+        logger.info(f"► 일별 수익률 표준편차(연간화): {annualized_std:.4f}%")
+        logger.info(f"► Sharpe Ratio: {sharpe:.4f}")
         
         # 로그 기록 부분도 수정
         with open("evaluation_log.txt", "a") as f:
@@ -262,10 +271,14 @@ class CustomCallback(BaseCallback):
         if total_return > self.best_mean_reward:
             self.best_mean_reward = total_return
             self.model.save(f"{self.model_path}_best")
-            print(f"새로운 최고 성능 모델 저장 ({self.model_path}_best), 총 수익률: {total_return:.4f}%")
+            logger.info(f"새로운 최고 성능 모델 저장 ({self.model_path}_best), 총 수익률: {total_return:.4f}%")
 
 def main():
     try:
+        logger.info("="*50)
+        logger.info(f"포트폴리오 최적화 학습 시작: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info("="*50)
+        
         model_path = "ppo_portfolio"
         total_timesteps = 500000  # 학습 스텝 증가
         eval_episodes = 100
@@ -274,20 +287,22 @@ def main():
 
         # 학습 데이터의 다양성 확보
         train_seeds = np.random.randint(0, 10000, size=10)  # 여러 시드 사용
+        logger.info(f"훈련에 사용할 시드: {train_seeds}")
         
         # 여러 환경에서 학습
         train_envs = [PortfolioEnv(seed=seed) for seed in train_seeds]
+        logger.info(f"환경 생성 완료: {len(train_envs)}개 환경")
         
         # 저장된 모델이 있으면 불러오고, 없으면 새로 생성
         if os.path.exists(model_path + ".zip"):
             try:
                 # 기존 모델 로드 시도
                 model = PPO.load(model_path, env=train_envs[0])
-                print(f"모델 불러오기 완료 ({model_path})")
+                logger.info(f"모델 불러오기 완료 ({model_path})")
             except ValueError as e:
                 # 관측 공간 불일치 오류 발생 시 새 모델 생성
-                print(f"기존 모델 로드 실패: {e}")
-                print("새 모델을 생성합니다.")
+                logger.warning(f"기존 모델 로드 실패: {e}")
+                logger.info("새 모델을 생성합니다.")
                 policy_kwargs = dict(
                     net_arch=[dict(pi=[128, 128, 64], vf=[128, 128, 64])],
                     activation_fn=torch.nn.ReLU
@@ -302,6 +317,7 @@ def main():
                             vf_coef=0.7,               # 가치 함수 계수 설정
                             max_grad_norm=0.3,         # 최대 그래디언트 노름 설정
                             verbose=2)
+                logger.info("PPO 모델 생성 완료")
         else:
             policy_kwargs = dict(
                 net_arch=[dict(pi=[128, 128, 64], vf=[128, 128, 64])],
@@ -317,7 +333,7 @@ def main():
                         vf_coef=0.7,
                         max_grad_norm=0.3,
                         verbose=2)
-            print("새 모델 생성")
+            logger.info("새 PPO 모델 생성 완료")
         
         # 평가용 환경 생성
         eval_env = PortfolioEnv(seed=9999)
@@ -327,11 +343,14 @@ def main():
             eval_freq=5000,   # 더 자주 평가
             model_path=model_path
         )
+        logger.info("평가 환경 및 콜백 설정 완료")
         
         # 각 환경에서 번갈아가며 학습
         learning_steps_per_env = 5000
+        logger.info(f"학습 계획: 총 {total_timesteps} 스텝, 각 환경당 {learning_steps_per_env} 스텝")
+        
         for cycle in range(total_timesteps // (len(train_envs) * learning_steps_per_env)):
-            print(f"\n===== 학습 사이클 {cycle+1} 시작 =====")
+            logger.info(f"\n===== 학습 사이클 {cycle+1} 시작 =====")
             
             for env_idx, env in enumerate(train_envs):
                 try:
@@ -339,18 +358,20 @@ def main():
                     
                     # 마지막 환경에서만 콜백 사용
                     if env_idx == len(train_envs) - 1:
+                        logger.info(f"환경 {env_idx+1}/{len(train_envs)} (시드 {train_seeds[env_idx]}) 학습 시작 (평가 포함)")
                         model.learn(total_timesteps=learning_steps_per_env, 
                                    reset_num_timesteps=False, 
                                    callback=callback)
                     else:
+                        logger.info(f"환경 {env_idx+1}/{len(train_envs)} (시드 {train_seeds[env_idx]}) 학습 시작")
                         model.learn(total_timesteps=learning_steps_per_env,
                                    reset_num_timesteps=False)
                     
-                    print(f"환경 {env_idx} (시드 {train_seeds[env_idx]}) 학습 완료")
+                    logger.info(f"환경 {env_idx+1} (시드 {train_seeds[env_idx]}) 학습 완료")
                     
                     # 각 환경 학습 후 별도 평가 실행
                     if env_idx % 3 == 0:  # 3개 환경마다 한 번씩 평가
-                        print("\n----- 환경 학습 후 중간 평가 -----")
+                        logger.info("\n----- 환경 학습 후 중간 평가 -----")
                         obs, _ = eval_env.reset()
                         done = False
                         rewards = []
@@ -359,23 +380,26 @@ def main():
                             obs, _, terminated, truncated, info = eval_env.step(action)
                             done = terminated or truncated
                             rewards.append(info["portfolio_return"])
-                        print(f"평균 수익률: {np.mean(rewards):.4f}")
+                        logger.info(f"중간 평가 평균 수익률: {np.mean(rewards):.4f}")
                     
                 except Exception as e:
-                    print(f"환경 {env_idx} 학습 중 오류: {e}")
+                    logger.error(f"환경 {env_idx+1} 학습 중 오류: {e}")
                     continue
             
             # 각 사이클 후 강제 평가
             if cycle > 0 and cycle % 2 == 0:  # 2 사이클마다 한 번씩
+                logger.info("\n----- 사이클 종료 후 강제 평가 -----")
                 callback._evaluate_model()
         
         # 최종 모델 저장
         model.save(model_path)
-        print(f"최종 모델 저장 완료: {model_path}")
+        logger.info(f"최종 모델 저장 완료: {model_path}")
         
         # 학습된 모델 평가 (여러 시드로 테스트)
         results = []
         max_attempts = 3  # 최대 시도 횟수 설정
+        
+        logger.info(f"\n===== 최종 모델 평가 (테스트 시드: {eval_episodes}개) =====")
         
         for eval_seed in range(1000, 1000 + eval_episodes):
             attempts = 0
@@ -450,13 +474,14 @@ def main():
                         "sharpe": sharpe_ratio
                     })
                     
+                    logger.info(f"시드 {eval_seed} 평가 완료: 수익률 {total_return:.2f}%, Sharpe {sharpe_ratio:.2f}")
                     break  # 성공적으로 완료되면 루프 종료
                     
                 except Exception as e:
                     attempts += 1
-                    print(f"시드 {eval_seed} 평가 실패 ({attempts}/{max_attempts}): {str(e)}")
+                    logger.warning(f"시드 {eval_seed} 평가 실패 ({attempts}/{max_attempts}): {str(e)}")
                     if attempts >= max_attempts:
-                        print(f"시드 {eval_seed} 평가 건너뜀")
+                        logger.warning(f"시드 {eval_seed} 평가 건너뜀")
             
             # 중간 결과 저장 (100개 에피소드마다)
             if len(results) % 100 == 0 and len(results) > 0:
@@ -464,44 +489,53 @@ def main():
                 avg_return = np.mean([r["total_return"] for r in results])
                 avg_vol = np.mean([r["vol"] for r in results])
                 
-                print(f"\n===== 중간 평가 결과 ({len(results)} 에피소드) =====")
-                print(f"평균 수익률: {avg_return:.4f}")
-                print(f"평균 변동성: {avg_vol:.4f}")
-                print(f"평균 Sharpe: {avg_sharpe:.4f}")
+                logger.info(f"\n===== 중간 평가 결과 ({len(results)} 에피소드) =====")
+                logger.info(f"평균 수익률: {avg_return:.4f}%")
+                logger.info(f"평균 변동성: {avg_vol:.4f}%")
+                logger.info(f"평균 Sharpe: {avg_sharpe:.4f}")
         
         # 최종 평가 결과 요약
         avg_sharpe = np.mean([r["sharpe"] for r in results])
         avg_return = np.mean([r["total_return"] for r in results])
         avg_vol = np.mean([r["vol"] for r in results])
         
-        print("\n===== 최종 평가 결과 =====")
-        print(f"평균 수익률: {avg_return:.4f}")
-        print(f"평균 변동성: {avg_vol:.4f}")
-        print(f"평균 Sharpe: {avg_sharpe:.4f}")
+        logger.info("\n" + "="*50)
+        logger.info("===== 최종 평가 결과 =====")
+        logger.info(f"평균 수익률: {avg_return:.4f}%")
+        logger.info(f"평균 변동성: {avg_vol:.4f}%")
+        logger.info(f"평균 Sharpe: {avg_sharpe:.4f}")
+        logger.info("="*50)
+        logger.info(f"학습 완료: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     except Exception as e:
-        print(f"학습 중 에러 발생: {str(e)}")
-        import traceback
-        traceback.print_exc()  # 상세 에러 정보 출력
+        logger.error(f"학습 중 에러 발생: {str(e)}")
+        logger.error(traceback.format_exc())  # 상세 에러 정보 출력
         raise e
 
 if __name__ == '__main__':
+    # FastAPI 웹 서버를 별도 스레드로 실행
+    server_thread = threading.Thread(target=start_server)
+    server_thread.daemon = True  # 메인 스레드가 종료되면 함께 종료
+    server_thread.start()
+    
+    logger.info("웹 인터페이스가 http://localhost:8000 에서 실행 중입니다")
+    time.sleep(1)  # 서버가 시작할 시간 부여
+    
     iteration = 0
     
     while True:  # 무한 반복
         try:
-            print(f"\n===== 학습 반복 #{iteration+1} 시작 =====")
+            logger.info(f"\n===== 학습 반복 #{iteration+1} 시작 =====")
             main()
             iteration += 1
-            print(f"학습 반복 #{iteration} 완료")
+            logger.info(f"학습 반복 #{iteration} 완료")
             
             # 선택적: 일정 시간 대기 (서버 부하 방지)
             time.sleep(10)  # 10초 대기
             
         except Exception as e:
-            print(f"실행 실패 (반복 #{iteration+1}): {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"실행 실패 (반복 #{iteration+1}): {str(e)}")
+            logger.error(traceback.format_exc())
             
             # 에러 발생 시 잠시 대기 후 재시도
             time.sleep(60)  # 1분 대기
