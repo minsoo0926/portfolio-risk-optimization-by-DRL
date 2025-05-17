@@ -12,9 +12,10 @@ import traceback
 import threading
 import time
 from app.server import start_server
+from app.utils import setup_logger
 
 # Get logger
-logger = logging.getLogger("portfolio_optimization")
+logger = setup_logger()
 
 # Set visualization style
 sns.set_style("whitegrid")

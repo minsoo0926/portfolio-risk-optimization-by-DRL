@@ -8,10 +8,11 @@ evaluating portfolio optimization models.
 import logging
 import uvicorn
 from app.server import setup_app
+from app.utils import setup_logger
 
 # Create FastAPI app
 app = setup_app()
-logger = logging.getLogger("portfolio_optimization")
+logger = setup_logger()
 
 def main(host="127.0.0.1", port=8000):
     """Start the portfolio optimization web interface"""

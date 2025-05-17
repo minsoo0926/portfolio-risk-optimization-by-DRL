@@ -23,17 +23,9 @@ import numpy as np
 from fastapi import FastAPI, APIRouter, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from app.utils import setup_logger
 
-# Logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("logs/server.log"),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger("portfolio_optimization")
+logger = setup_logger()
 
 # Log message queue
 log_queue = queue.Queue(maxsize=1000)

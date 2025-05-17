@@ -13,9 +13,10 @@ import traceback
 import asyncio
 import threading
 from app.server import start_server
+from app.utils import setup_logger
 
 # Get logger
-logger = logging.getLogger("portfolio_optimization")
+logger = setup_logger()
 
 # Custom environment
 class PortfolioEnv(gym.Env):

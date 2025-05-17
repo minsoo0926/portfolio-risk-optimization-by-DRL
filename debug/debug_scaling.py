@@ -2,19 +2,22 @@ import numpy as np
 import pandas as pd
 from generate_scenario import generate_scenario
 import matplotlib.pyplot as plt
+from app.utils import setup_logger
+
+logger = setup_logger()
 
 # Generate sample data
-print("Generating sample data...")
+logger.info("Generating sample data...")
 data = generate_scenario(10, seed=42)
 
 # Extract returns data (1st column for each stock)
 returns_indices = np.arange(0, 40, 4)
 
 # Three approaches to portfolio returns
-print("\nComparing three approaches to handling returns:")
-print("1. Using raw data (as stored in CSV) / 100")
-print("2. Using raw data without dividing by 100")
-print("3. Using log returns instead of simple returns")
+logger.info("\nComparing three approaches to handling returns:")
+logger.info("1. Using raw data (as stored in CSV) / 100")
+logger.info("2. Using raw data without dividing by 100")
+logger.info("3. Using log returns instead of simple returns")
 
 # Set up portfolio
 weights = np.array([0.1] * 10)  # Equal weighting
@@ -52,11 +55,11 @@ for day in range(days):
     
     # Print first few days
     if day < 5:
-        print(f"\nDay {day+1}:")
-        print(f"  Raw stock returns: {[round(r, 4) for r in stock_returns_raw]}")
-        print(f"  Approach 1 - Portfolio return: {portfolio_return1:.6f} ({portfolio_return1*100:.4f}%)")
-        print(f"  Approach 2 - Portfolio return: {portfolio_return2:.6f} ({portfolio_return2:.4f}%)")
-        print(f"  Approach 3 - Log return: {portfolio_return3:.6f}, Simple return: {simple_return3:.6f} ({simple_return3*100:.4f}%)")
+        logger.info(f"\nDay {day+1}:")
+        logger.info(f"  Raw stock returns: {[round(r, 4) for r in stock_returns_raw]}")
+        logger.info(f"  Approach 1 - Portfolio return: {portfolio_return1:.6f} ({portfolio_return1*100:.4f}%)")
+        logger.info(f"  Approach 2 - Portfolio return: {portfolio_return2:.6f} ({portfolio_return2:.4f}%)")
+        logger.info(f"  Approach 3 - Log return: {portfolio_return3:.6f}, Simple return: {simple_return3:.6f} ({simple_return3*100:.4f}%)")
 
 # Calculate performance metrics
 total_return1 = (portfolio_values1[-1] / initial_capital - 1) * 100
@@ -69,21 +72,21 @@ annualized_return1 = ((1 + total_return1/100) ** (trading_days_per_year/days) - 
 annualized_return2 = ((1 + total_return2/100) ** (trading_days_per_year/days) - 1) * 100
 annualized_return3 = ((1 + total_return3/100) ** (trading_days_per_year/days) - 1) * 100
 
-print("\n===== Performance Comparison =====")
-print(f"Approach 1 (Divide by 100):")
-print(f"  Total return: {total_return1:.2f}%")
-print(f"  Annualized return: {annualized_return1:.2f}%")
-print(f"  Final portfolio value: ${portfolio_values1[-1]:.2f}")
+logger.info("\n===== Performance Comparison =====")
+logger.info(f"Approach 1 (Divide by 100):")
+logger.info(f"  Total return: {total_return1:.2f}%")
+logger.info(f"  Annualized return: {annualized_return1:.2f}%")
+logger.info(f"  Final portfolio value: ${portfolio_values1[-1]:.2f}")
 
-print(f"\nApproach 2 (Raw percentages):")
-print(f"  Total return: {total_return2:.2f}%")
-print(f"  Annualized return: {annualized_return2:.2f}%")
-print(f"  Final portfolio value: ${portfolio_values2[-1]:.2f}")
+logger.info(f"\nApproach 2 (Raw percentages):")
+logger.info(f"  Total return: {total_return2:.2f}%")
+logger.info(f"  Annualized return: {annualized_return2:.2f}%")
+logger.info(f"  Final portfolio value: ${portfolio_values2[-1]:.2f}")
 
-print(f"\nApproach 3 (Log returns):")
-print(f"  Total return: {total_return3:.2f}%")
-print(f"  Annualized return: {annualized_return3:.2f}%") 
-print(f"  Final portfolio value: ${portfolio_values3[-1]:.2f}")
+logger.info(f"\nApproach 3 (Log returns):")
+logger.info(f"  Total return: {total_return3:.2f}%")
+logger.info(f"  Annualized return: {annualized_return3:.2f}%") 
+logger.info(f"  Final portfolio value: ${portfolio_values3[-1]:.2f}")
 
 # Create a comparison chart
 plt.figure(figsize=(10, 6))
@@ -96,15 +99,15 @@ plt.ylabel('Portfolio Value ($)')
 plt.legend()
 plt.grid(True)
 plt.savefig('scaling_comparison.png')
-print("\nComparison chart saved as 'scaling_comparison.png'")
+logger.info("\nComparison chart saved as 'scaling_comparison.png'")
 
 # Analysis of correct scaling
-print("\n===== Analysis of Correct Approach =====")
-print("Approach 1 (Divide by 100) is correct because:")
+logger.info("\n===== Analysis of Correct Approach =====")
+logger.info("Approach 1 (Divide by 100) is correct because:")
 print("1. The data is stored in percentage form (e.g., 1.5 means 1.5%)")
-print("2. For portfolio calculations, we need returns in decimal form (e.g., 0.015)")
-print("3. generate_scenario.py multiplies returns by 100 (lines 96-97)")
-print("4. train.py correctly divides by 100 to convert back to decimal (lines 84, 88)")
+logger.info("2. For portfolio calculations, we need returns in decimal form (e.g., 0.015)")
+logger.info("3. generate_scenario.py multiplies returns by 100 (lines 96-97)")
+logger.info("4. train.py correctly divides by 100 to convert back to decimal (lines 84, 88)")
 
 # Verify by looking at raw returns
 mean_raw_returns = []
@@ -113,10 +116,10 @@ for i in range(10):
     mean_raw_returns.append(np.mean(data.iloc[1:, col_idx].values))
 
 mean_raw_return = np.mean(mean_raw_returns)
-print(f"\nMean daily return in raw data: {mean_raw_return:.4f}%")
-print(f"This converts to a decimal return of: {mean_raw_return/100:.6f}")
-print(f"Annualized return from mean daily: {(1 + mean_raw_return/100)**252 * 100 - 100:.2f}%")
+logger.info(f"\nMean daily return in raw data: {mean_raw_return:.4f}%")
+logger.info(f"This converts to a decimal return of: {mean_raw_return/100:.6f}")
+logger.info(f"Annualized return from mean daily: {(1 + mean_raw_return/100)**252 * 100 - 100:.2f}%")
 
 # Verify with evaluation.py logic
-print("\nIn evaluation.py, the daily_return value is already in decimal form")
-print("This is correct because train.py's step() method returns stock_returns / 100.0")
+logger.info("\nIn evaluation.py, the daily_return value is already in decimal form")
+logger.info("This is correct because train.py's step() method returns stock_returns / 100.0")

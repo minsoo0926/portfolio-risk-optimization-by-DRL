@@ -84,3 +84,23 @@ def ensure_directories():
             print(f"Created directory: {directory}")
     
     return True
+
+
+import logging
+
+def setup_logger(name='portfolio_optimization',log_file='logs/server.log'):
+    # 로깅 설정
+    stream_handler = logging.StreamHandler()
+    stream_handler.setStream(open(os.devnull, 'w', encoding='utf-8'))
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            stream_handler
+        ]
+    )
+    logger = logging.getLogger(name)
+    
+    return logger

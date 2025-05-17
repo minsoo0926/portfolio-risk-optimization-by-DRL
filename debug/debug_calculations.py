@@ -5,17 +5,9 @@ from train import PortfolioEnv
 from stable_baselines3 import PPO
 import logging
 import sys
+from app.utils import setup_logger
 
-# 로깅 설정
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("debug_log.txt"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger("debug")
+logger = setup_logger()
 
 def debug_sharpe_calculation(returns, trading_days_per_year=252, risk_free_rate=2.0, transaction_costs=0.001, turnovers=None):
     """
