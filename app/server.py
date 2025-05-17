@@ -134,6 +134,67 @@ def run_training():
         is_training = False
         return {"status": "error", "message": f"Error starting training: {str(e)}"}
 
+def run_symmetric_training():
+    global current_process, is_training, is_evaluating
+
+    if is_training or is_evaluating:
+        return {"status": "error", "message": "Another task is already running."}
+    
+    is_training = True
+    logger.info("="*50)
+    logger.info("Starting portfolio optimization training")
+    logger.info("="*50)
+
+    try:
+        # 무한 루프로 학습을 실행하는 함수
+        def continuous_training():
+            global current_process, is_training
+            try:
+                while is_training:
+                    # 학습 프로세스 실행
+                    process = subprocess.Popen(
+                        ["python", "-c", "from symmetric_train import main; main()"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1
+                    )
+
+                    current_process = process
+
+                    for line in iter(process.stdout.readline, ''):
+                        if line and is_training:
+                            logger.info(line.strip())
+
+                    if process.poll() is not None:
+                        if process.returncode == 0:
+                            logger.info("Training cycle completed successfully")
+                        else:
+                            logger.error(f"Training cycle failed: exit code {process.returncode}") 
+
+                    logger.info("Waiting 60 seconds before starting next training cycle...")
+                    time.sleep(60)
+
+                    if not is_training:
+                        break
+            except Exception as e:  
+                logger.error(f"Error in continuous training: {str(e)}")
+                current_process = None
+                is_training = False
+
+        training_thread = threading.Thread(target=continuous_training)
+        training_thread.daemon = True
+        training_thread.start()
+
+        return {"status": "success", "message": "Continuous training started."}
+    
+    except Exception as e:
+        logger.error(f"Error starting training: {str(e)}")
+        current_process = None
+        is_training = False
+        return {"status": "error", "message": f"Error starting training: {str(e)}"}
+    
+
 # Model evaluation function
 def run_evaluation():
     global current_process, is_training, is_evaluating
@@ -329,6 +390,17 @@ async def train_model(background_tasks: BackgroundTasks):
     # Run training as background task
     background_tasks.add_task(run_training)
     return {"status": "success", "message": "Training started."}
+
+@router.post("/api/symmetric_train")
+async def symmetric_train_model(background_tasks: BackgroundTasks):
+    if is_training or is_evaluating:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Another task is already running."}
+        )
+    
+    background_tasks.add_task(run_symmetric_training)
+    return {"status": "success", "message": "Symmetric training started."}
 
 @router.post("/api/evaluate")
 async def evaluate_model():

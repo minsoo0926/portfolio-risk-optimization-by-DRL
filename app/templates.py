@@ -52,6 +52,10 @@ HTML_TEMPLATE = """
             background-color: #4CAF50;
             color: white;
         }
+        .symmetric-train-btn {
+            background-color: #2196F3;
+            color: white;
+        }
         .evaluate-btn {
             background-color: #2196F3;
             color: white;
@@ -182,6 +186,7 @@ HTML_TEMPLATE = """
             
             <div class="button-group">
                 <button id="trainButton" class="train-btn">Train Model</button>
+                <button id="symmetricTrainButton" class="symmetric-train-btn">Symmetric Train Model</button>
                 <button id="evaluateButton" class="evaluate-btn">Evaluate Model</button>
                 <button id="stopButton" class="stop-btn" disabled>Stop Task</button>
             </div>
@@ -223,6 +228,7 @@ HTML_TEMPLATE = """
 
     <script>
         const trainButton = document.getElementById('trainButton');
+        const symmetricTrainButton = document.getElementById('symmetricTrainButton');
         const evaluateButton = document.getElementById('evaluateButton');
         const stopButton = document.getElementById('stopButton');
         const statusDiv = document.getElementById('status');
@@ -282,6 +288,36 @@ HTML_TEMPLATE = """
                 
             } catch (error) {
                 showError('Error starting training: ' + error.message);
+                updateButtonState(false);
+            }
+        });
+
+        // Start symmetric training
+        symmetricTrainButton.addEventListener('click', async () => {
+            if (isProcessRunning) return;
+            
+            // Clear log container and hide results panel
+            logContainer.innerHTML = '';
+            resultsPanel.classList.add('hidden');
+            
+            try {
+                updateButtonState(true);
+                currentOperation.textContent = "Symmetric Model Training";
+                
+                const response = await fetch('/api/symmetric_train', {
+                    method: 'POST',
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    console.log('Symmetric training started');
+                } else {
+                    showError('Failed to start symmetric training: ' + data.message);
+                    updateButtonState(false);
+                }
+                
+            } catch (error) {
+                showError('Error starting symmetric training: ' + error.message);
                 updateButtonState(false);
             }
         });
