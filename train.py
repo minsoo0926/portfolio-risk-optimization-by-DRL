@@ -18,6 +18,10 @@ from app.utils import setup_logger
 # Get logger
 logger = setup_logger()
 
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cpu" # PPO is poorly supported on GPU
+logger.info(f"Using device: {device}")
+
 # Custom environment
 class PortfolioEnv(gym.Env):
     def __init__(self, seed):
@@ -306,6 +310,7 @@ def main():
         eval_freq = 20000
 
         # Ensure diversity in training data
+        np.random.seed(int(time.time()))
         train_seeds = np.random.randint(0, 10000, size=10)  # Use multiple seeds
         logger.info(f"Training seeds: {train_seeds}")
         
@@ -336,7 +341,8 @@ def main():
                             clip_range=0.1,            # Appropriate clipping range
                             vf_coef=0.5,               # Value function weight adjustment
                             max_grad_norm=0.5,         # Enhanced gradient clipping
-                            verbose=2)
+                            verbose=2,
+                            device=device)
                 logger.info("PPO model created successfully")
         else:
             policy_kwargs = dict(
@@ -352,7 +358,8 @@ def main():
                         clip_range=0.1,            # Appropriate clipping range
                         vf_coef=0.5,               # Value function weight adjustment
                         max_grad_norm=0.5,         # Enhanced gradient clipping
-                        verbose=2)
+                        verbose=2,
+                        device=device)
             logger.info("New PPO model created successfully")
         
         # Create evaluation environment
