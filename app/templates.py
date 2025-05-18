@@ -402,8 +402,8 @@ HTML_TEMPLATE = """
                 if (stepMatch) {
                     currentStep.textContent = stepMatch[1];
                 }
-            } else if (data.message.includes('Total return')) {
-                const returnMatch = data.message.match(/Total return ([\d.-]+)/);
+            } else if (data.message.includes('Total Return:') || data.message.includes('Total return:')) {
+                const returnMatch = data.message.match(/Total [Rr]eturn: ([\d.-]+)%/);
                 if (returnMatch) {
                     bestReturn.textContent = `${returnMatch[1]}%`;
                 }

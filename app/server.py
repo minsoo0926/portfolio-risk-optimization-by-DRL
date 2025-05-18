@@ -89,7 +89,8 @@ def run_training():
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
-                        bufsize=1
+                        bufsize=1,
+                        env=os.environ.copy()
                     )
                     
                     # 현재 프로세스 업데이트
@@ -137,30 +138,78 @@ def run_training():
 # Model evaluation function
 def run_evaluation():
     global current_process, is_training, is_evaluating
-    
+    # Check if another task is already running
     if is_training or is_evaluating:
+        logger.warning("Evaluation request rejected: Another task is already running")
         return {"status": "error", "message": "Another task is already running."}
-    
-    is_evaluating = True
-    logger.info("="*50)
-    logger.info("Starting portfolio optimization model evaluation")
-    logger.info("="*50)
-    
+        
     try:
-        # Run evaluation directly
+        # Update state
+        is_evaluating = True
+        logger.info("="*50)
+        logger.info("Starting portfolio optimization model evaluation")
+        logger.info("="*50)
+        
+        # Start evaluation process
         logger.info("Portfolio simulation starting")
         logger.info("UI update: Evaluation started")
         
-        # Generate portfolio charts directly
-        generate_portfolio_charts()
+        # Run evaluation process in background
+        def run_evaluation_process():
+            global current_process, is_evaluating
+            try:
+                # Run evaluation as subprocess
+                process = subprocess.Popen(
+                    ["python", "-c", "from evaluation import evaluate_model; evaluate_model('ppo_portfolio.zip', initial_capital=10000)"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    env=os.environ.copy()  # 현재 환경 변수 유지
+                )
+                
+                # Update current process reference
+                current_process = process
+                
+                # Log output
+                for line in iter(process.stdout.readline, ''):
+                    if line and is_evaluating:
+                        logger.info(line.strip())
+                
+                # Check process completion
+                if process.poll() is not None:
+                    if process.returncode == 0:
+                        logger.info("Model evaluation completed successfully")
+                    else:
+                        logger.error(f"Model evaluation failed: exit code {process.returncode}")
+                
+                # Copy image files to static folder
+                import shutil
+                for img_file in ['portfolio_performance.png', 'portfolio_weights.png']:
+                    if os.path.exists(img_file):
+                        shutil.copy(img_file, os.path.join("static", img_file))
+                        logger.info(f"Image file copied: {img_file} -> static/{img_file}")
+                
+                # Complete message
+                logger.info("Model evaluation completed successfully")
+                logger.info("UI update: Chart images generated")
+                
+                # Update state
+                current_process = None
+                is_evaluating = False
+                
+            except Exception as e:
+                logger.error(f"Error during evaluation process: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+            finally:
+                current_process = None
+                is_evaluating = False
         
-        # Complete message
-        logger.info("Model evaluation completed successfully")
-        logger.info("UI update: Chart images generated")
-        
-        # Update global variables
-        current_process = None
-        is_evaluating = False
+        # Run evaluation process in background
+        evaluation_thread = threading.Thread(target=run_evaluation_process)
+        evaluation_thread.daemon = True
+        evaluation_thread.start()
         
         # Return immediately
         return {"status": "success", "message": "Model evaluation started."}
@@ -331,43 +380,16 @@ async def train_model(background_tasks: BackgroundTasks):
     return {"status": "success", "message": "Training started."}
 
 @router.post("/api/evaluate")
-async def evaluate_model():
-    global is_training, is_evaluating
+async def evaluate_model(background_tasks: BackgroundTasks):
     if is_training or is_evaluating:
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Another task is already running."}
         )
     
-    # Start evaluation
-    logger.info("Model evaluation request received - starting evaluation")
-    
-    try:
-        # Run directly instead of background task to ensure images are generated
-        is_evaluating = True
-        
-        # Generate charts synchronously
-        results = generate_portfolio_charts()
-        
-        # Update state
-        is_evaluating = False
-        
-        # Return success with timestamp to prevent caching
-        return {
-            "status": "success", 
-            "message": "Model evaluation completed.",
-            "results": results,
-            "timestamp": time.time()
-        }
-    except Exception as e:
-        logger.error(f"Failed to start model evaluation: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        is_evaluating = False
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": f"Failed to start model evaluation: {str(e)}"}
-        )
+    # Run evaluation as background task
+    background_tasks.add_task(run_evaluation)
+    return {"status": "success", "message": "Model evaluation started."}
 
 @router.post("/api/stop")
 async def stop_process():
@@ -427,9 +449,9 @@ def setup_app():
     
     # Generate sample images on startup
     try:
-        from app.utils import generate_sample_images
-        generate_sample_images()
-        logger.info("Sample chart images generated")
+        pass
+        # generate_portfolio_charts()
+        # logger.info("Sample chart images generated")
     except Exception as e:
         logger.warning(f"Error generating sample images: {str(e)}")
         # Try to copy existing images to static folder

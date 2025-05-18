@@ -87,20 +87,35 @@ def ensure_directories():
 
 
 import logging
+import sys
 
-def setup_logger(name='portfolio_optimization',log_file='logs/server.log'):
-    # 로깅 설정
-    stream_handler = logging.StreamHandler()
-    stream_handler.setStream(open(os.devnull, 'w', encoding='utf-8'))
+def setup_logger(name='portfolio_optimization', log_file='logs/server.log'):
+    """
+    로깅 설정을 구성하고 로거를 반환합니다.
     
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            stream_handler
-        ]
-    )
+    Args:
+        name: 로거 이름
+        log_file: 로그 파일 경로
+    
+    Returns:
+        구성된 로거 객체
+    """
+    # 로거 생성
     logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    
+    # 이미 핸들러가 설정되어 있으면 중복 방지
+    if logger.handlers:
+        return logger
+    
+    # 파일 핸들러 설정
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
+    
+    # 콘솔 핸들러 설정 (표준 출력으로)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
+    logger.addHandler(console_handler)
     
     return logger

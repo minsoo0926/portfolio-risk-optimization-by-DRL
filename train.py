@@ -32,7 +32,7 @@ class PortfolioEnv(gym.Env):
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(10,), dtype=np.float32)
         
         # Load data for the current episode
-        self.seed = seed
+        self.seed = seed % 100
         data = None
         while data is None:
             data = generate_scenario(10, seed)
@@ -266,24 +266,24 @@ class CustomCallback(BaseCallback):
         
         # Output results
         logger.info("\nPerformance Metrics:")
-        logger.info(f"► Average Daily Return (before costs): {mean_daily_return:.4f}%")
-        logger.info(f"► Average Daily Net Return (after costs): {mean_daily_net_return:.4f}%")
-        logger.info(f"► Total Compound Return: {total_return:.4f}%")
-        logger.info(f"► Annualized Return: {annualized_return:.4f}%")
-        logger.info(f"► Annual Risk-Free Rate: {annual_risk_free_rate:.4f}%")
-        logger.info(f"► Daily Net Return Std Dev: {daily_std:.4f}%")
-        logger.info(f"► Annualized Std Dev: {annualized_std:.4f}%")
-        logger.info(f"► Sharpe Ratio: {sharpe:.4f}")
+        logger.info(f"Average Daily Return (before costs): {mean_daily_return:.4f}%")
+        logger.info(f"Average Daily Net Return (after costs): {mean_daily_net_return:.4f}%")
+        logger.info(f"Total Return: {total_return:.4f}%")
+        logger.info(f"Annualized Return: {annualized_return:.4f}%")
+        logger.info(f"Annual Risk-Free Rate: {annual_risk_free_rate:.4f}%")
+        logger.info(f"Daily Net Return Std Dev: {daily_std:.4f}%")
+        logger.info(f"Annualized Std Dev: {annualized_std:.4f}%")
+        logger.info(f"Sharpe Ratio: {sharpe:.4f}")
         
         # Output Sharpe ratio calculation details (for debugging)
-        logger.info(f"► Sharpe Calculation: ({annualized_return:.4f} - {annual_risk_free_rate:.4f}) / {annualized_std:.4f} = {sharpe:.4f}")
+        logger.info(f"Sharpe Calculation: ({annualized_return:.4f} - {annual_risk_free_rate:.4f}) / {annualized_std:.4f} = {sharpe:.4f}")
         
         # Log to file
         with open("evaluation_log.txt", "a") as f:
             f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Timestep {self.num_timesteps}\n")
             f.write(f"Average Daily Return (before costs): {mean_daily_return:.4f}%\n")
             f.write(f"Average Daily Net Return (after costs): {mean_daily_net_return:.4f}%\n")
-            f.write(f"Total Compound Return: {total_return:.4f}%\n")
+            f.write(f"Total Return: {total_return:.4f}%\n")
             f.write(f"Annualized Return: {annualized_return:.4f}%\n")
             f.write(f"Annual Risk-Free Rate: {annual_risk_free_rate:.4f}%\n")
             f.write(f"Daily Net Return Std Dev: {daily_std:.4f}%\n")

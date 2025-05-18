@@ -22,7 +22,7 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (14, 8)
 plt.rcParams['font.size'] = 12
 
-def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
+def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
     """
     Evaluates the trained model and visualizes portfolio value trends.
     
@@ -32,6 +32,8 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
         initial_capital: Initial investment amount
         debug: Whether to output debugging information
     """
+    if seed is None:
+        seed = int(time.time())
     # Create environment
     logger.info(f"Starting model evaluation: {model_path} (seed: {seed})")
     env = PortfolioEnv(seed=seed)
@@ -98,7 +100,7 @@ def evaluate_model(model_path, seed=1234, initial_capital=10000, debug=True):
         weights_history.append(env.previous_action)
         
         # Output detailed debugging info for the first step
-        if step == 0:
+        if step == 0 and debug:
             logger.info("\n===== First Step Debugging =====")
             logger.info(f"Original daily return: {daily_return * 100:.4f}%")
             logger.info(f"Return after scale adjustment: {daily_return:.6f}")
