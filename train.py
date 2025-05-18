@@ -103,9 +103,9 @@ class PortfolioEnv(gym.Env):
             turnover = np.sum(np.abs(weights))  # All positions are newly constructed
             
             # Calculate reward - focus on risk-adjusted return
-            raw_reward = portfolio_return - 0.5 * portfolio_vol - 0.1 * turnover
+            raw_reward = portfolio_return - 0.1 * portfolio_vol - 0.01 * turnover
             # Alternative: Sharpe ratio-like reward function
-            # risk_adjusted_reward = portfolio_return / (portfolio_vol + 1e-8) - 0.1 * turnover
+            # raw_reward = portfolio_return / (portfolio_vol + 1e-8) - 0.1 * turnover
             reward = raw_reward
             
             # Calculate new state
