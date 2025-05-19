@@ -32,7 +32,7 @@ class PortfolioEnv(gym.Env):
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(10,), dtype=np.float32)
         
         # Load data for the current episode
-        self.seed = seed % 100
+        self.seed = seed
         data = None
         while data is None:
             data = generate_scenario(10, seed)

@@ -67,6 +67,7 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
         action, _ = model.predict(obs, deterministic=True)
         
         # Normalize action: make weights sum to 0
+        action = np.copy(action)  # Create a deep copy of the action
         action = action - np.mean(action)
         action = action / (np.sum(np.abs(action)) + 1e-8)
         
@@ -299,6 +300,7 @@ def compare_models(model_paths, seeds=[1234, 5678, 9012], initial_capital=10000)
                 action, _ = model.predict(obs, deterministic=True)
                 
                 # Normalize action: same as in the environment's step method
+                action = np.copy(action)  # Create a deep copy of the action
                 action = action - np.mean(action)
                 action = action / (np.sum(np.abs(action)) + 1e-8)
                 
@@ -382,6 +384,7 @@ def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000
             
             while not done:
                 action, _ = model.predict(obs, deterministic=True)
+                action = np.copy(action)  # Create a deep copy of the action
                 action = action - np.mean(action)
                 action = action / (np.sum(np.abs(action)) + 1e-8)
                 
