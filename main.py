@@ -14,7 +14,7 @@ from app.utils import setup_logger
 app = setup_app()
 logger = setup_logger()
 
-def main(host="127.0.0.1", port=8000):
+def main(host="127.0.0.1", port=8080):
     """Start the portfolio optimization web interface"""
     logger.info(f"Web interface running at http://{host}:{port}")
     uvicorn.run("main:app", host=host, port=port, log_level="info", reload=True)
