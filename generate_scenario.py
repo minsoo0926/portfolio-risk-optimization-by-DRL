@@ -41,6 +41,7 @@ def generate_scenario(n:int, seed = 42):
             df['Date'] = pd.to_datetime(df['Price'])
             df = df.set_index('Date')
             df = df.drop(columns=['Unnamed: 0', 'Price'], errors='ignore')
+            
             # If concatenated_df is empty, initialize it with the current df
             if concatenated_df.empty:
                 concatenated_df = df
@@ -52,11 +53,7 @@ def generate_scenario(n:int, seed = 42):
             print(f'Error processing {ticker}: {e}')
             return generate_scenario(10, seed + 1)  # 재귀 호출 시 시드 변경
 
-    # Drop any columns that are duplicated due to the index or unnamed columns
-    # concatenated_df = concatenated_df.loc[:, ~concatenated_df.columns.duplicated()]
-
     # Filter the data to leave only consecutive one year data
-    # Assuming the data is sorted by date and the 'Date' column is present
     concatenated_df = concatenated_df.reset_index()
     
     # 랜덤 날짜 선택 - numpy 랜덤 함수 사용
@@ -73,8 +70,6 @@ def generate_scenario(n:int, seed = 42):
     
     # Check if the number of rows is fewer than 250
     if len(one_year_data) < 250:
-        # Truncate the DataFrame
-        one_year_data = pd.DataFrame()
         return generate_scenario(10, seed + 1)  # 재귀 호출 시 시드 변경
         
     # Read the macro data
@@ -100,20 +95,23 @@ def generate_scenario(n:int, seed = 42):
             # return과 ma는 *100
             return_col = f'S{i}_return'
             ma_col = f'S{i}_ma'
-            one_year_data[return_col] *= 100
-            one_year_data[ma_col] *= 100
-            
-            # vol도 *100
             vol_col = f'S{i}_vol'
-            one_year_data[vol_col] *= 100
+            
+            if return_col in one_year_data.columns:
+                one_year_data[return_col] *= 100
+            if ma_col in one_year_data.columns:
+                one_year_data[ma_col] *= 100
+            if vol_col in one_year_data.columns:
+                one_year_data[vol_col] *= 100
         
         # 데이터 셔플링
         stock_groups = []
         for i in range(1, n+1):
             group_columns = [f'S{i}_return', f'S{i}_ma', f'S{i}_vol', f'S{i}_rvol']
-            stock_groups.append(group_columns)
+            if all(col in one_year_data.columns for col in group_columns):
+                stock_groups.append(group_columns)
         
-        # 주식 그룹을 랜덤하게 섞음 - 두 번째 random.seed() 호출 제거
+        # 주식 그룹을 랜덤하게 섞음
         random.shuffle(stock_groups)
         
         # 섞인 순서대로 새로운 컬럼 이름 생성
@@ -123,10 +121,8 @@ def generate_scenario(n:int, seed = 42):
             new_columns.extend(list(zip(group, new_names)))
         
         # 컬럼 이름 변경
-        for old_name, new_name in new_columns:
-            one_year_data = one_year_data.rename(columns={old_name: new_name + '_temp'})
-        for old_name, new_name in new_columns:
-            one_year_data = one_year_data.rename(columns={new_name + '_temp': new_name})
+        rename_dict = {old: new for old, new in new_columns}
+        one_year_data = one_year_data.rename(columns=rename_dict)
         
         # 날짜 순서대로 정렬
         one_year_data = one_year_data.sort_values('Date').reset_index(drop=True)
