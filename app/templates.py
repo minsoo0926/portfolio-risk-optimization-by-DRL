@@ -393,6 +393,11 @@ HTML_TEMPLATE = """
             logEntry.appendChild(messageText);
             logContainer.appendChild(logEntry);
             
+            // Keep only the most recent 1000 log entries
+            while (logContainer.children.length > 1000) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+            
             // Auto-scroll
             logContainer.scrollTop = logContainer.scrollHeight;
             
