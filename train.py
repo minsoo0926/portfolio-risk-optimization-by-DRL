@@ -3,6 +3,9 @@ import numpy as np
 import pandas as pd
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.policies import ActorCriticPolicy
+import torch as th
+import torch.nn as nn
 from generate_scenario import generate_scenario
 import os
 import time
@@ -70,9 +73,7 @@ class PortfolioEnv(gym.Env):
         return self.state, {}
 
     def step(self, action):
-        # Normalize action
-        action = action - np.mean(action)
-        weights = action / (np.sum(np.abs(action)) + 1e-8)
+        weights = action
         
         # Save current weights
         self.previous_action = weights.copy()
@@ -297,6 +298,41 @@ class CustomCallback(BaseCallback):
             self.model.save(f"{self.model_path}_best")
             logger.info(f"New best model saved ({self.model_path}_best), Total Return: {total_return:.4f}%")
 
+class NormalizedActorCriticPolicy(ActorCriticPolicy):
+    def __init__(
+        self,
+        observation_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
+        lr_schedule,
+        net_arch=None,
+        activation_fn=nn.ReLU,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            observation_space,
+            action_space,
+            lr_schedule,
+            net_arch,
+            activation_fn,
+            *args,
+            **kwargs,
+        )
+
+    def forward(self, obs, deterministic=False):
+        # Get the raw actions from the policy network
+        actions, values, log_probs = super().forward(obs, deterministic)
+        
+        # Normalize the actions
+        # First clip to [-1, 1] range
+        actions = th.clamp(actions, -1, 1)
+        # Then normalize to sum of absolute values = 1
+        # Subtract mean to center around 0
+        actions = actions - th.mean(actions, dim=1, keepdim=True)
+        actions = actions / (th.sum(th.abs(actions), dim=1, keepdim=True) + 1e-8)
+        
+        return actions, values, log_probs
+
 def main():
     try:
         logger.info("="*50)
@@ -332,7 +368,7 @@ def main():
                     net_arch=dict(pi=[128, 128, 64], vf=[128, 128, 64]),  # Modified network architecture
                     activation_fn=torch.nn.ReLU
                 )
-                model = PPO("MlpPolicy", train_envs[0], policy_kwargs=policy_kwargs,
+                model = PPO(NormalizedActorCriticPolicy, train_envs[0], policy_kwargs=policy_kwargs,
                             learning_rate=0.0001,      # Learning rate for stable training
                             n_steps=2048,              # Longer trajectories for stable learning
                             batch_size=128,            # Appropriate batch size
@@ -349,7 +385,7 @@ def main():
                 net_arch=dict(pi=[128, 128, 64], vf=[128, 128, 64]),  # Modified network architecture
                 activation_fn=torch.nn.ReLU
             )
-            model = PPO("MlpPolicy", train_envs[0], policy_kwargs=policy_kwargs,
+            model = PPO(NormalizedActorCriticPolicy, train_envs[0], policy_kwargs=policy_kwargs,
                         learning_rate=0.0001,      # Learning rate for stable training
                         n_steps=2048,              # Longer trajectories for stable learning
                         batch_size=128,            # Appropriate batch size
@@ -366,8 +402,8 @@ def main():
         eval_env = PortfolioEnv(seed=9999)
         callback = CustomCallback(
             eval_env=eval_env,
-            save_freq=5000,   # Save more frequently
-            eval_freq=5000,   # Evaluate more frequently
+            save_freq=save_freq,   # Save more frequently
+            eval_freq=eval_freq,   # Evaluate more frequently
             model_path=model_path
         )
         logger.info("Evaluation environment and callback setup complete")

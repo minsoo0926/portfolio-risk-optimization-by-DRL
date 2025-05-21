@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from stable_baselines3 import PPO
-from train import PortfolioEnv
+from train import PortfolioEnv, NormalizedActorCriticPolicy
 import os
 import seaborn as sns
 from datetime import datetime
@@ -38,8 +38,8 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
     logger.info(f"Starting model evaluation: {model_path} (seed: {seed})")
     env = PortfolioEnv(seed=seed)
     
-    # Load model
-    model = PPO.load(model_path)
+    # Load model with custom policy
+    model = PPO.load(model_path, custom_objects={"policy_class": NormalizedActorCriticPolicy})
     logger.info(f"Model loaded successfully: {model_path}")
     
     # Run evaluation
@@ -63,13 +63,8 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
     
     logger.info("Starting simulation...")
     while not done:
-        # Predict model action
+        # Predict model action (already normalized by the policy)
         action, _ = model.predict(obs, deterministic=True)
-        
-        # Normalize action: make weights sum to 0
-        action = np.copy(action)  # Create a deep copy of the action
-        action = action - np.mean(action)
-        action = action / (np.sum(np.abs(action)) + 1e-8)
         
         # Take a step in the environment
         obs, reward, terminated, truncated, info = env.step(action)
@@ -288,7 +283,7 @@ def compare_models(model_paths, seeds=[1234, 5678, 9012], initial_capital=10000)
         for seed in seeds:
             logger.info(f"Evaluating with seed {seed}...")
             env = PortfolioEnv(seed=seed)
-            model = PPO.load(model_path)
+            model = PPO.load(model_path, custom_objects={"policy_class": NormalizedActorCriticPolicy})
             
             obs, _ = env.reset()
             done = False
@@ -298,12 +293,6 @@ def compare_models(model_paths, seeds=[1234, 5678, 9012], initial_capital=10000)
             
             while not done:
                 action, _ = model.predict(obs, deterministic=True)
-                
-                # Normalize action: same as in the environment's step method
-                action = np.copy(action)  # Create a deep copy of the action
-                action = action - np.mean(action)
-                action = action / (np.sum(np.abs(action)) + 1e-8)
-                
                 obs, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
                 
@@ -375,7 +364,7 @@ def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000
                 logger.info(f"Robustness evaluation progress: {i}/{len(seeds)} ({i/len(seeds)*100:.1f}%)")
                 
             env = PortfolioEnv(seed=seed)
-            model = PPO.load(model_path)
+            model = PPO.load(model_path, custom_objects={"policy_class": NormalizedActorCriticPolicy})
             
             obs, _ = env.reset()
             done = False
@@ -384,10 +373,6 @@ def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000
             
             while not done:
                 action, _ = model.predict(obs, deterministic=True)
-                action = np.copy(action)  # Create a deep copy of the action
-                action = action - np.mean(action)
-                action = action / (np.sum(np.abs(action)) + 1e-8)
-                
                 obs, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
                 

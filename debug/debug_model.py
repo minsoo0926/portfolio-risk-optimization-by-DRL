@@ -1,4 +1,4 @@
-from train import PortfolioEnv
+from train import PortfolioEnv, NormalizedActorCriticPolicy
 from stable_baselines3 import PPO
 import numpy as np
 import os
@@ -14,7 +14,7 @@ if os.path.exists(model_path + ".zip"):
     print(f"Found existing model at {model_path}.zip")
     # Test environment
     test_env = PortfolioEnv(seed=1234)
-    model = PPO.load(model_path)
+    model = PPO.load(model_path, custom_objects={"policy_class": NormalizedActorCriticPolicy})
     
     # Test the model
     obs, _ = test_env.reset()
@@ -27,9 +27,7 @@ if os.path.exists(model_path + ".zip"):
     
     while not done:
         action, _ = model.predict(obs, deterministic=True)
-        # Normalize action as in the step method
-        action = action - np.mean(action)
-        weights = action / (np.sum(np.abs(action)) + 1e-8)
+        weights = action
         
         # Store weights
         weights_history.append(weights)
