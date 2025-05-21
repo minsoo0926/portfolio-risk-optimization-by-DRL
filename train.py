@@ -324,8 +324,8 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         actions, values, log_probs = super().forward(obs, deterministic)
         
         # Normalize the actions
-        # First clip to [-1, 1] range
-        actions = th.clamp(actions, -1, 1)
+        # First clip to (-1, 1) range
+        actions = th.tanh(actions)
         # Then normalize to sum of absolute values = 1
         # Subtract mean to center around 0
         actions = actions - th.mean(actions, dim=1, keepdim=True)
