@@ -58,11 +58,14 @@ class PortfolioEnv(gym.Env):
 
     def _get_state(self):
         # Combine current market data and previous action to create state
-        return np.concatenate([
+        state = np.concatenate([
             self.market_data[self.current_step].flatten(),  # 40 features
             self.macro_data[self.current_step].flatten(),   # 2 features
             self.previous_action                           # 10 features (previous action)
         ]).astype(np.float32)
+        if np.isnan(state).any():
+            print(f"NaN detected in state at step {self.current_step}")
+        return state
 
     def reset(self, seed=None, options=None):
         if seed is not None:
@@ -70,6 +73,8 @@ class PortfolioEnv(gym.Env):
         self.current_step = 0
         self.previous_action = np.zeros(10)
         self.state = self._get_state()
+        if np.isnan(self.state).any():
+            print('WARNING: NaN in obs after reset!', self.state)
         return self.state, {}
 
     def step(self, action):
@@ -114,6 +119,8 @@ class PortfolioEnv(gym.Env):
             
             # Calculate new state
             self.state = self._get_state()
+            if np.isnan(self.state).any():
+                print('WARNING: NaN in obs after step!', self.state)
         else:
             # No reward at episode end
             portfolio_return = 0
@@ -324,9 +331,12 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
 
     def forward(self, obs, deterministic=False):
     # Get the raw actions from the policy network
-        actions, values, log_probs = super().forward(obs, deterministic)
+        features = self.extract_features(obs)
+        latent_pi, latent_vf = self.mlp_extractor(features)
         
-        # 1. 먼저 평균을 0으로 만들기
+        values = self.value_net(latent_vf)
+        distribution = self._get_action_dist_from_latent(latent_pi)
+        actions = distribution.get_actions(deterministic=deterministic)
         actions_mean = th.mean(actions, dim=1, keepdim=True)
         centered_actions = actions - actions_mean
         
@@ -337,8 +347,10 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         
         # 정규화된 action 계산
         normalized_actions = centered_actions / abs_sum
+        log_prob = distribution.log_prob(normalized_actions)
         
-        return normalized_actions, values, log_probs
+        actions = normalized_actions.reshape((-1, *self.action_space.shape))
+        return actions, values, log_prob
 
     def _predict(self, obs, deterministic=False):
         actions, _, _ = self.forward(obs, deterministic)
@@ -535,7 +547,7 @@ def main():
                     
                     # Calculate Sharpe ratio - using net return standard deviation
                     net_returns_array = np.array(net_returns) * 100
-                    daily_std = np.std(net_returns_array)
+                    daily_std = np.std(net_returns_array) * 100
                     annualized_std = daily_std * np.sqrt(trading_days_per_year)
                     sharpe_ratio = (annualized_return - annual_risk_free_rate) / (annualized_std + 1e-8)
                     

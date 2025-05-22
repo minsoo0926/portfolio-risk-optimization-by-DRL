@@ -245,14 +245,27 @@ HTML_TEMPLATE = """
             evaluateButton.disabled = running;
             stopButton.disabled = !running;
             
+            const infiniteMsg = document.getElementById('infiniteMsg');
             if (running) {
                 statusDiv.className = 'running';
                 statusDiv.textContent = 'Status: Running...';
                 metricsLoader.classList.remove('hidden');
+                if (!infiniteMsg) {
+                    const msg = document.createElement('div');
+                    msg.id = 'infiniteMsg';
+                    msg.style.color = 'red';
+                    msg.style.fontWeight = 'bold';
+                    msg.style.margin = '10px 0';
+                    msg.textContent = 'Training is running in infinite loop... Click STOP to halt.';
+                    statusDiv.parentNode.insertBefore(msg, statusDiv.nextSibling);
+                }
             } else {
                 statusDiv.className = 'idle';
                 statusDiv.textContent = 'Status: Ready';
                 metricsLoader.classList.add('hidden');
+                if (infiniteMsg) {
+                    infiniteMsg.remove();
+                }
             }
         }
         
