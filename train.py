@@ -101,7 +101,10 @@ class PortfolioEnv(gym.Env):
             
             # Calculate turnover
             # In the first step, all allocations are turnover
-            turnover = np.sum(np.abs(weights))  # All positions are newly constructed
+            if self.previous_action is None:
+                turnover = 0
+            else:
+                turnover = np.sum(np.abs(weights - self.previous_action))
             
             # Calculate reward - focus on risk-adjusted return
             raw_reward = portfolio_return - 0.1 * portfolio_vol - 0.01 * turnover
