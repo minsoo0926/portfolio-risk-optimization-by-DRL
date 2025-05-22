@@ -323,18 +323,26 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         )
 
     def forward(self, obs, deterministic=False):
-        # Get the raw actions from the policy network
+    # Get the raw actions from the policy network
         actions, values, log_probs = super().forward(obs, deterministic)
         
-        # Normalize the actions
-        # First clip to (-1, 1) range
-        actions = th.tanh(actions)
-        # Then normalize to sum of absolute values = 1
-        # Subtract mean to center around 0
-        actions = actions - th.mean(actions, dim=1, keepdim=True)
-        actions = actions / (th.sum(th.abs(actions), dim=1, keepdim=True) + 1e-8)
+        # 1. 먼저 평균을 0으로 만들기
+        actions_mean = th.mean(actions, dim=1, keepdim=True)
+        centered_actions = actions - actions_mean
         
-        return actions, values, log_probs
+        # 2. 절대값의 합을 1로 정규화
+        abs_sum = th.sum(th.abs(centered_actions), dim=1, keepdim=True)
+        # 0으로 나누는 것을 방지 (배치 내에 모든 값이 같은 경우)
+        abs_sum = th.clamp(abs_sum, min=1e-8)
+        
+        # 정규화된 action 계산
+        normalized_actions = centered_actions / abs_sum
+        
+        return normalized_actions, values, log_probs
+
+    def _predict(self, obs, deterministic=False):
+        actions, _, _ = self.forward(obs, deterministic)
+        return actions
 
 def main():
     try:

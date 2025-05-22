@@ -22,7 +22,7 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (14, 8)
 plt.rcParams['font.size'] = 12
 
-def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
+def evaluate_model(model_path, seed=None, initial_capital=10000, debug=True):
     """
     Evaluates the trained model and visualizes portfolio value trends.
     
@@ -65,7 +65,6 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
     while not done:
         # Predict model action (already normalized by the policy)
         action, _ = model.predict(obs, deterministic=True)
-        
         # Take a step in the environment
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
