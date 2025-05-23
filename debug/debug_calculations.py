@@ -179,12 +179,21 @@ def evaluate_model_debug(model_path, seed=1234):
     # 에피소드 실행
     logger.info("시뮬레이션 시작...")
     while not done:
-        # 모델의 행동 예측
-        action, _ = model.predict(obs, deterministic=True)
-        
-        # 환경에서 한 스텝 진행
-        obs, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
+        try:
+            # 모델의 행동 예측
+            action, _ = model.predict(obs, deterministic=True)
+            
+            # 환경에서 한 스텝 진행
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+        except Exception as e:
+            print(f"예측 중 오류 발생: {e}")
+            # 폴백 액션 제공 (제로 웨이트)
+            action = np.zeros(env.action_space.shape)
+            
+            # 폴백 액션으로 스텝 진행
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
         
         # 일별 수익률 및 턴오버 저장
         daily_return = info["portfolio_return"] / 100.0  # 퍼센트를 소수점으로 변환

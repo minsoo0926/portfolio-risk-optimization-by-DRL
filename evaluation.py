@@ -3,7 +3,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from stable_baselines3 import PPO
-from train import PortfolioEnv, NormalizedActorCriticPolicy
+from train import PortfolioEnv
+from models import NormalizedActorCriticPolicy
 import os
 import seaborn as sns
 from datetime import datetime

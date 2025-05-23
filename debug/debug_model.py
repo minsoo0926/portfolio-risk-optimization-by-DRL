@@ -26,15 +26,26 @@ if os.path.exists(model_path + ".zip"):
     steps = 0
     
     while not done:
-        action, _ = model.predict(obs, deterministic=True)
-        weights = action
-        
-        # Store weights
-        weights_history.append(weights)
-        
-        # Take a step
-        obs, reward, terminated, truncated, info = test_env.step(action)
-        done = terminated or truncated
+        try:
+            action, _ = model.predict(obs, deterministic=True)
+            weights = action
+            
+            # Store weights
+            weights_history.append(weights)
+            
+            # Take a step
+            obs, reward, terminated, truncated, info = test_env.step(action)
+            done = terminated or truncated
+        except Exception as e:
+            print(f"Error during prediction: {e}")
+            # Provide a fallback action (zero weights)
+            action = np.zeros(test_env.action_space.shape)
+            weights = action
+            weights_history.append(weights)
+            
+            # Take a step with fallback action
+            obs, reward, terminated, truncated, info = test_env.step(action)
+            done = terminated or truncated
         
         # Get return information
         daily_return = info["portfolio_return"]  # Already in decimal form (e.g., 0.01 = 1%)
