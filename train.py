@@ -80,9 +80,6 @@ class PortfolioEnv(gym.Env):
     def step(self, action):
         weights = action
         
-        # Save current weights
-        self.previous_action = weights.copy()
-        
         # Move to next time step
         self.current_step += 1
         terminated = self.current_step >= self.max_steps
@@ -110,6 +107,9 @@ class PortfolioEnv(gym.Env):
                 turnover = 0
             else:
                 turnover = np.sum(np.abs(weights - self.previous_action))
+            
+            # Save current weights
+            self.previous_action = weights.copy()
             
             # Calculate reward - focus on risk-adjusted return
             raw_reward = portfolio_return - 0.1 * portfolio_vol - 0.01 * turnover
@@ -487,7 +487,7 @@ def main():
         
         logger.info(f"\n===== Final Model Evaluation ({eval_episodes} test seeds) =====")
         
-        for eval_seed in range(1000, 1000 + eval_episodes):
+        for eval_seed in range(1000, 1000 + eval_episodes * 10, 10):
             attempts = 0
             while attempts < max_attempts:
                 try:
