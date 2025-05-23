@@ -89,7 +89,7 @@ class PortfolioEnv(gym.Env):
         if not terminated:
             if np.isnan(self.state).any():
                 logger.warning(f'WARNING: NaN in obs after step!, pass this step. {self.state}')
-                return self.state, 0, terminated, truncated, {"portfolio_return": 0, "portfolio_vol": 0, "turnover": 0} # dummy output
+                return self.state, 0, terminated, True, {"portfolio_return": 0, "portfolio_vol": 0, "turnover": 0} # dummy output
             
             returns_indices = np.arange(0, 40, 4)
             # Data is already stored as percentage (%), convert to decimal form (1% -> 0.01)
@@ -207,6 +207,7 @@ class CustomCallback(BaseCallback):
                 obs, _, terminated, truncated, info = self.eval_env.step(action)
                 done = terminated or truncated
             except Exception as e:
+                action = np.zeros(self.eval_env.action_space.shape) # dummy action
                 obs, _, terminated, truncated, info = self.eval_env.step(action)
                 done = terminated or truncated
                 logger.warning(f"Error during evaluation: {e}")
@@ -341,12 +342,10 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
     def forward(self, obs, deterministic=False):
     # Get the raw actions from the policy network
         features = self.extract_features(obs)
-        if self.share_features_extractor:
-            latent_pi, latent_vf = self.mlp_extractor(features)
-        else:
-            pi_features, vf_features = features
-            latent_pi = self.mlp_extractor.forward_actor(pi_features)
-            latent_vf = self.mlp_extractor.forward_critic(vf_features)
+
+        # TODO: check mlp_extractor
+        latent_pi, latent_vf = self.mlp_extractor.forward(features)
+        # latent_vf = self.mlp_extractor.forward_critic(features)
         
         values = self.value_net(latent_vf)
         distribution = self._get_action_dist_from_latent(latent_pi)
@@ -478,6 +477,7 @@ def main():
                                 done = terminated or truncated
                                 rewards.append(info["portfolio_return"])
                             except Exception as e:
+                                action = np.zeros(eval_env.action_space.shape) # dummy action
                                 obs, _, terminated, truncated, info = eval_env.step(action)
                                 done = terminated or truncated
                                 logger.warning(f"Error during evaluation: {e}")
@@ -489,9 +489,9 @@ def main():
                     continue
             
             # Force evaluation after each cycle
-            if cycle > 0 and cycle % 2 == 0:  # Every 2 cycles
-                logger.info("\n----- Forced Evaluation After Cycle Completion -----")
-                callback._evaluate_model()
+            # if cycle > 0 and cycle % 2 == 0:  # Every 2 cycles
+            #     logger.info("\n----- Forced Evaluation After Cycle Completion -----")
+            #     callback._evaluate_model()
         
         # Save final model
         model.save(model_path)
@@ -527,6 +527,7 @@ def main():
                             obs, _, terminated, truncated, info = test_env.step(action)
                             done = terminated or truncated
                         except Exception as e:
+                            action = np.zeros(test_env.action_space.shape) # dummy action
                             obs, _, terminated, truncated, info = test_env.step(action)
                             done = terminated or truncated
                             logger.warning(f"Error during evaluation: {e}")

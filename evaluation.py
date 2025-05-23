@@ -68,9 +68,10 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=True):
             obs, _, terminated, truncated, info = env.step(action)
             done = terminated or truncated
         except Exception as e:
+            action = np.zeros(env.action_space.shape) # dummy action
             obs, _, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-            logger.warning(f"Error during evaluation: {e}")
+            logger.warning(f"Error during evaluation: {e}, state = {obs}")
             continue
         
         # Add date
