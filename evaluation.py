@@ -63,11 +63,15 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=True):
     
     logger.info("Starting simulation...")
     while not done:
-        # Predict model action (already normalized by the policy)
-        action, _ = model.predict(obs, deterministic=True)
-        # Take a step in the environment
-        obs, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
+        try:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, _, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+        except Exception as e:
+            obs, _, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            logger.warning(f"Error during evaluation: {e}")
+            continue
         
         # Add date
         current_date = start_date + pd.Timedelta(days=step)
@@ -268,154 +272,6 @@ def calculate_max_drawdown(portfolio_values):
     
     return max_dd
 
-def compare_models(model_paths, seeds=[1234, 5678, 9012], initial_capital=10000):
-    """Compare the performance of multiple models."""
-    logger.info(f"Starting model comparison: {model_paths}")
-    all_results = []
-    
-    for model_path in model_paths:
-        model_name = os.path.basename(model_path)
-        logger.info(f"\n----- Evaluating Model: {model_name} -----")
-        
-        # Evaluate across multiple seeds
-        seed_results = []
-        for seed in seeds:
-            logger.info(f"Evaluating with seed {seed}...")
-            env = PortfolioEnv(seed=seed)
-            model = PPO.load(model_path, custom_objects={"policy_class": NormalizedActorCriticPolicy})
-            
-            obs, _ = env.reset()
-            done = False
-            
-            portfolio_value = initial_capital
-            portfolio_values = [portfolio_value]
-            
-            while not done:
-                action, _ = model.predict(obs, deterministic=True)
-                obs, reward, terminated, truncated, info = env.step(action)
-                done = terminated or truncated
-                
-                # Calculate daily return - convert to decimal
-                daily_return = info["portfolio_return"]  # Already in decimal form (e.g., 0.01 = 1%)
-                turnover = info["turnover"]
-                
-                # Calculate transaction cost
-                transaction_cost = 0.001 * turnover
-                
-                # Apply net return
-                net_return = daily_return - transaction_cost
-                portfolio_value *= (1 + net_return)
-                
-                portfolio_values.append(portfolio_value)
-            
-            # Calculate performance metrics
-            total_return = (portfolio_values[-1] / initial_capital - 1) * 100
-            seed_results.append(total_return)
-            logger.info(f"Seed {seed} evaluation result: Return {total_return:.2f}%")
-        
-        # Calculate average and standard deviation
-        avg_return = np.mean(seed_results)
-        std_return = np.std(seed_results)
-        
-        all_results.append({
-            'Model': model_name,
-            'Avg_Return': avg_return,
-            'Std_Return': std_return,
-            'Min_Return': min(seed_results),
-            'Max_Return': max(seed_results)
-        })
-        
-        logger.info(f"Model {model_name} evaluation completed:")
-        logger.info(f"  Average Return: {avg_return:.2f}%")
-        logger.info(f"  Standard Deviation: {std_return:.2f}%")
-        logger.info(f"  Min/Max: {min(seed_results):.2f}% / {max(seed_results):.2f}%")
-    
-    # Create and output results dataframe
-    results_df = pd.DataFrame(all_results)
-    logger.info("\n===== Model Comparison Results =====")
-    logger.info(f"\n{results_df}")
-    
-    # Visualize results
-    logger.info("Creating model comparison chart...")
-    plt.figure(figsize=(12, 6))
-    plt.bar(results_df['Model'], results_df['Avg_Return'], yerr=results_df['Std_Return'], 
-            capsize=5, color='skyblue', alpha=0.7)
-    plt.title('Average Return by Model', fontsize=15)
-    plt.ylabel('Average Return (%)', fontsize=12)
-    plt.grid(True, axis='y')
-    plt.xticks(rotation=45)
-    
-    plt.tight_layout()
-    plt.savefig('model_comparison.png')
-    logger.info("Model comparison chart has been saved to 'model_comparison.png'")
-    
-    return results_df
-
-def robust_evaluation(model_path, seeds=range(1000, 1100), initial_capital=10000):
-    """Evaluate model robustness across various seeds."""
-    logger.info(f"Starting robustness evaluation: {model_path}, Test seeds: {len(seeds)}")
-    results = []
-    
-    for i, seed in enumerate(seeds):
-        try:
-            # Log progress
-            if i % 10 == 0:
-                logger.info(f"Robustness evaluation progress: {i}/{len(seeds)} ({i/len(seeds)*100:.1f}%)")
-                
-            env = PortfolioEnv(seed=seed)
-            model = PPO.load(model_path, custom_objects={"policy_class": NormalizedActorCriticPolicy})
-            
-            obs, _ = env.reset()
-            done = False
-            
-            portfolio_value = initial_capital
-            
-            while not done:
-                action, _ = model.predict(obs, deterministic=True)
-                obs, reward, terminated, truncated, info = env.step(action)
-                done = terminated or truncated
-                
-                daily_return = info["portfolio_return"]  # Already in decimal form (e.g., 0.01 = 1%)
-                turnover = info["turnover"]
-                transaction_cost = 0.001 * turnover
-                
-                net_return = daily_return - transaction_cost
-                portfolio_value *= (1 + net_return)
-            
-            total_return = (portfolio_value / initial_capital - 1) * 100
-            results.append(total_return)
-            
-            # Log brief results every 20 seeds
-            if i % 20 == 19:
-                logger.info(f"Seed {seed}: Return {total_return:.2f}%")
-        
-        except Exception as e:
-            logger.error(f"Error during seed {seed} evaluation: {e}")
-            continue
-    
-    # Summarize results
-    if results:
-        logger.info(f"\n===== Robustness Evaluation Results ({len(results)} seeds) =====")
-        logger.info(f"Average Return: {np.mean(results):.2f}%")
-        logger.info(f"Return Standard Deviation: {np.std(results):.2f}%")
-        logger.info(f"Minimum Return: {min(results):.2f}%")
-        logger.info(f"Maximum Return: {max(results):.2f}%")
-        
-        # Visualize with histogram
-        logger.info("Creating return distribution histogram...")
-        plt.figure(figsize=(10, 6))
-        plt.hist(results, bins=20, alpha=0.7)
-        plt.title('Return Distribution Across Different Seeds')
-        plt.xlabel('Return (%)')
-        plt.ylabel('Frequency')
-        plt.grid(True, alpha=0.3)
-        plt.savefig('return_distribution.png')
-        logger.info("Return distribution histogram has been saved to 'return_distribution.png'")
-    else:
-        logger.warning("No evaluation results available.")
-    
-    return results
-
 def start_evaluation_server():
     """Start evaluation server"""
     app = start_server()
@@ -441,9 +297,6 @@ if __name__ == "__main__":
         model_path = "ppo_portfolio_best"  # or "ppo_portfolio_best"
         results, weights = evaluate_model(model_path, seed=1234)
         
-        # Compare multiple models (optional)
-        # model_paths = ["ppo_portfolio", "ppo_portfolio_best", "save/ppo_portfolio_best_v1"]
-        # compare_results = compare_models(model_paths)
         
         # Robustness evaluation (optional)
         # robust_results = robust_evaluation(model_path, seeds=range(1000, 1050))

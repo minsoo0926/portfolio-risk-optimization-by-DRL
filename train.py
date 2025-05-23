@@ -87,6 +87,10 @@ class PortfolioEnv(gym.Env):
         
         # Get return data at new time step (t+1)
         if not terminated:
+            if np.isnan(self.state).any():
+                logger.warning(f'WARNING: NaN in obs after step!, pass this step. {self.state}')
+                return self.state, 0, terminated, truncated, {"portfolio_return": 0, "portfolio_vol": 0, "turnover": 0} # dummy output
+            
             returns_indices = np.arange(0, 40, 4)
             # Data is already stored as percentage (%), convert to decimal form (1% -> 0.01)
             stock_returns = self.market_data[self.current_step, returns_indices] / 100.0
@@ -119,8 +123,7 @@ class PortfolioEnv(gym.Env):
             
             # Calculate new state
             self.state = self._get_state()
-            if np.isnan(self.state).any():
-                print('WARNING: NaN in obs after step!', self.state)
+            
         else:
             # No reward at episode end
             portfolio_return = 0
@@ -199,9 +202,15 @@ class CustomCallback(BaseCallback):
         obs, _ = self.eval_env.reset()
         done = False
         while not done:
-            action, _ = self.model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = self.eval_env.step(action)
-            done = terminated or truncated
+            try:
+                action, _ = self.model.predict(obs, deterministic=True)
+                obs, _, terminated, truncated, info = self.eval_env.step(action)
+                done = terminated or truncated
+            except Exception as e:
+                obs, _, terminated, truncated, info = self.eval_env.step(action)
+                done = terminated or truncated
+                logger.warning(f"Error during evaluation: {e}")
+                continue
             
             # Store daily returns (already in decimal form)
             daily_return = info["portfolio_return"]  # Already in decimal form (e.g., 0.01 = 1%)
@@ -332,11 +341,17 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
     def forward(self, obs, deterministic=False):
     # Get the raw actions from the policy network
         features = self.extract_features(obs)
-        latent_pi, latent_vf = self.mlp_extractor(features)
+        if self.share_features_extractor:
+            latent_pi, latent_vf = self.mlp_extractor(features)
+        else:
+            pi_features, vf_features = features
+            latent_pi = self.mlp_extractor.forward_actor(pi_features)
+            latent_vf = self.mlp_extractor.forward_critic(vf_features)
         
         values = self.value_net(latent_vf)
         distribution = self._get_action_dist_from_latent(latent_pi)
         actions = distribution.get_actions(deterministic=deterministic)
+        # normalize actions
         actions_mean = th.mean(actions, dim=1, keepdim=True)
         centered_actions = actions - actions_mean
         
@@ -348,13 +363,8 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         # 정규화된 action 계산
         normalized_actions = centered_actions / abs_sum
         log_prob = distribution.log_prob(normalized_actions)
-        
         actions = normalized_actions.reshape((-1, *self.action_space.shape))
         return actions, values, log_prob
-
-    def _predict(self, obs, deterministic=False):
-        actions, _, _ = self.forward(obs, deterministic)
-        return actions
 
 def main():
     try:
@@ -462,10 +472,16 @@ def main():
                         done = False
                         rewards = []
                         while not done:
-                            action, _ = model.predict(obs, deterministic=True)
-                            obs, _, terminated, truncated, info = eval_env.step(action)
-                            done = terminated or truncated
-                            rewards.append(info["portfolio_return"])
+                            try:
+                                action, _ = model.predict(obs, deterministic=True)
+                                obs, _, terminated, truncated, info = eval_env.step(action)
+                                done = terminated or truncated
+                                rewards.append(info["portfolio_return"])
+                            except Exception as e:
+                                obs, _, terminated, truncated, info = eval_env.step(action)
+                                done = terminated or truncated
+                                logger.warning(f"Error during evaluation: {e}")
+                                continue
                         logger.info(f"Intermediate evaluation average return: {np.mean(rewards):.4f}")
                     
                 except Exception as e:
@@ -506,9 +522,15 @@ def main():
                     portfolio_value = initial_capital
                     
                     while not done:
-                        action, _ = model.predict(obs, deterministic=True)
-                        obs, reward, terminated, truncated, info = test_env.step(action)
-                        done = terminated or truncated
+                        try:
+                            action, _ = model.predict(obs, deterministic=True)
+                            obs, _, terminated, truncated, info = test_env.step(action)
+                            done = terminated or truncated
+                        except Exception as e:
+                            obs, _, terminated, truncated, info = test_env.step(action)
+                            done = terminated or truncated
+                            logger.warning(f"Error during evaluation: {e}")
+                            continue
                         
                         # Store daily returns (already in decimal form)
                         daily_return = info["portfolio_return"]  # Already in decimal form (e.g., 0.01 = 1%)
