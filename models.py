@@ -124,6 +124,9 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         # Sample actions
         actions = distribution.get_actions(deterministic=deterministic)
         
+        # IMPORTANT: Calculate log probabilities BEFORE any transformation
+        log_prob = distribution.log_prob(actions)
+        
         # Center actions
         actions_mean = th.mean(actions, dim=1, keepdim=True)
         centered_actions = actions - actions_mean
@@ -134,9 +137,6 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         
         # Normalized actions
         normalized_actions = centered_actions / abs_sum
-        
-        # Log probabilities
-        log_prob = distribution.log_prob(normalized_actions)
         
         # Reshape actions
         actions = normalized_actions.reshape((-1, *self.action_space.shape))
