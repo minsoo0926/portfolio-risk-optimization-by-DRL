@@ -22,6 +22,8 @@ def generate_scenario(n: int, seed=42, max_retries=100):
         print(f"Failed to generate scenario after maximum retries")
         return None
     
+    seed = seed % 100
+    
     # 시드 설정 (random과 numpy 모두 설정)
     random.seed(int(seed))
     np.random.seed(int(seed))

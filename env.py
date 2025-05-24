@@ -94,6 +94,24 @@ class PortfolioEnv(gym.Env):
                 self.previous_action # 10 features (previous action)
             ]).astype(np.float32)
             
+            # IMPROVED: Normalize state for better value function learning
+            # 1. Clip extreme values
+            state = np.clip(state, -10.0, 10.0)
+            
+            # 2. Apply simple normalization for market data (first 40 features)
+            if len(state) >= 40:
+                # Normalize returns and volatility features separately
+                returns_features = state[0:40:4]  # Every 4th feature starting from 0
+                state[0:40:4] = np.clip(returns_features, -0.1, 0.1)  # Clip daily returns to ±10%
+                
+                vol_features = state[2:40:4]  # Every 4th feature starting from 2
+                state[2:40:4] = np.clip(vol_features, 0.0, 0.5)  # Clip volatility to 0-50%
+            
+            # 3. Normalize macro features (VIX, Treasury)
+            if len(state) >= 42:
+                state[40] = np.clip(state[40], 10.0, 80.0) / 100.0  # Normalize VIX to 0-0.8 range
+                state[41] = np.clip(state[41], 0.0, 10.0) / 100.0   # Normalize Treasury to 0-0.1 range
+            
             # Final NaN check
             if np.isnan(state).any():
                 logger.warning(f"NaN detected in final state at step {self.current_step}")
@@ -123,6 +141,10 @@ class PortfolioEnv(gym.Env):
             self.seed = seed
         self.current_step = 0
         self.previous_action = np.zeros(10)
+        
+        # Reset cumulative return tracking for improved rewards
+        self.cumulative_return = 0.0
+        
         self.state = self._get_state()
         if np.isnan(self.state).any():
             print('WARNING: NaN in obs after reset!', self.state)
@@ -235,9 +257,33 @@ class PortfolioEnv(gym.Env):
                 # Save current weights as previous action (make defensive copy)
                 self.previous_action = np.array(weights, dtype=np.float32).copy()
                 
-                # Calculate reward - focus on risk-adjusted return
-                raw_reward = portfolio_return - 0.1 * portfolio_vol - 0.01 * turnover
-                reward = raw_reward
+                # Calculate reward - Improved for better value function learning
+                # 1. Scale portfolio return for numerical stability
+                scaled_return = portfolio_return * 100  # Convert to percentage scale
+                
+                # 2. Add reward shaping with cumulative performance
+                if not hasattr(self, 'cumulative_return'):
+                    self.cumulative_return = 0.0
+                self.cumulative_return += portfolio_return
+                
+                # 3. Risk-adjusted return with better scaling
+                risk_penalty = 0.5 * portfolio_vol * 100  # Scale volatility penalty
+                transaction_penalty = 0.1 * turnover  # Reduce transaction cost penalty
+                
+                # 4. Add exploration bonus for diversification
+                diversification_bonus = 0.1 * (1.0 - np.max(np.abs(weights))) if len(weights) > 0 else 0.0
+                
+                # 5. Combine components with better scaling
+                base_reward = scaled_return - risk_penalty - transaction_penalty + diversification_bonus
+                
+                # 6. Add small cumulative performance bonus
+                performance_bonus = 0.01 * max(0, self.cumulative_return * 100)  # Only positive cumulative returns
+                
+                # 7. Final reward with normalization
+                reward = base_reward + performance_bonus
+                
+                # 8. Clip reward to prevent extreme values
+                reward = np.clip(reward, -10.0, 10.0)
                 
                 # Calculate new state
                 self.state = self._get_state()

@@ -386,7 +386,7 @@ def stop_current_process():
                         logger.info("Process force killed")
                     except subprocess.TimeoutExpired:
                         logger.error("Could not kill process")
-                        
+                            
             except Exception as e:
                 logger.error(f"Error terminating process: {e}")
         

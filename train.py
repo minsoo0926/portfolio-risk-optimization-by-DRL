@@ -45,11 +45,11 @@ class CustomCallback(BaseCallback):
     def _on_step(self):
         try:
             # Periodically save model (now in temp folder)
-            if self.num_timesteps % self.save_freq == 0:
+            # if self.num_timesteps % self.save_freq == 0:
                 # Save intermediate model in temp folder
-                temp_model_path = os.path.join('temp', f"{self.model_path}_{self.num_timesteps}")
-                self.model.save(temp_model_path)
-                logger.info(f"Timestep {self.num_timesteps}: Model saved (temp/{self.model_path}_{self.num_timesteps})")
+                # temp_model_path = os.path.join('temp', f"{self.model_path}_{self.num_timesteps}")
+                # self.model.save(temp_model_path)
+                # logger.info(f"Timestep {self.num_timesteps}: Model saved (temp/{self.model_path}_{self.num_timesteps})")
             
             # REMOVED: Periodic evaluation to avoid dimension errors
             # Just log progress every eval_freq steps
@@ -99,46 +99,48 @@ def main():
                 
                 # Create model with improved hyperparameters
                 policy_kwargs = dict(
-                    net_arch=dict(pi=[256, 256, 128], vf=[256, 256, 128]),  # Larger networks
-                    activation_fn=torch.nn.Tanh  # Better for financial data
+                    net_arch=dict(pi=[128, 128, 64], vf=[128, 128, 64]),  # Larger networks
+                    activation_fn=torch.nn.ReLU  # Better for financial data
                 )
                 
                 model = PPO(
                     NormalizedActorCriticPolicy,
                     train_envs[0],
                     policy_kwargs=policy_kwargs,
-                    learning_rate=3e-5,  # Lower learning rate
+                    learning_rate=3e-4,  # INCREASED: Much higher learning rate for faster value function learning
                     n_steps=512,  # Better for ~252 step episodes 
-                    batch_size=64,  # Smaller batch size
-                    gamma=0.995,  # Slightly higher discount for financial data
-                    ent_coef=0.005,  # Lower entropy for more stable policies
-                    clip_range=0.15,  # Slightly higher clip range
-                    vf_coef=0.25,  # Lower value function coefficient
+                    batch_size=128,  # INCREASED: Larger batch size for more stable gradient estimates
+                    gamma=0.99,  # Slightly higher discount for financial data
+                    ent_coef=0.01,  # INCREASED: Higher entropy for better exploration
+                    clip_range=0.2,  # Standard clip range
+                    vf_coef=0.5,  # REDUCED: Lower value function coefficient to balance actor/critic learning
+                    n_epochs=10,  # REDUCED: Fewer epochs to prevent overfitting
                     max_grad_norm=0.5,
-                    verbose=2,
+                    verbose=1,
                     device=device
                 )
                 logger.info("PPO model created successfully")
         else:
             # Create new model with improved hyperparameters
             policy_kwargs = dict(
-                net_arch=dict(pi=[256, 256, 128], vf=[256, 256, 128]),  # Larger networks
-                activation_fn=torch.nn.Tanh  # Better for financial data
+                net_arch=dict(pi=[128, 128, 64], vf=[128, 128, 64]), 
+                activation_fn=torch.nn.ReLU
             )
             
             model = PPO(
                 NormalizedActorCriticPolicy,
                 train_envs[0],
                 policy_kwargs=policy_kwargs,
-                learning_rate=3e-5,  # Lower learning rate
-                n_steps=512,  # Better for ~252 step episodes
-                batch_size=64,  # Smaller batch size  
-                gamma=0.995,  # Slightly higher discount for financial data
-                ent_coef=0.005,  # Lower entropy for more stable policies
-                clip_range=0.15,  # Slightly higher clip range
-                vf_coef=0.25,  # Lower value function coefficient
+                learning_rate=3e-4,  # INCREASED: Much higher learning rate for faster value function learning
+                n_steps=512,  # Better for ~252 step episodes 
+                batch_size=128,  # INCREASED: Larger batch size for more stable gradient estimates
+                gamma=0.99,  # Slightly higher discount for financial data
+                ent_coef=0.01,  # INCREASED: Higher entropy for better exploration
+                clip_range=0.2,  # Standard clip range
+                vf_coef=0.5,  # REDUCED: Lower value function coefficient to balance actor/critic learning
+                n_epochs=10,  # REDUCED: Fewer epochs to prevent overfitting
                 max_grad_norm=0.5,
-                verbose=2,
+                verbose=1,
                 device=device
             )
             logger.info("New PPO model created successfully")
@@ -222,7 +224,7 @@ def main():
                         
                         while not done:
                             try:
-                                action, _ = model.predict(obs, deterministic=True)
+                                action, _ = model.predict(obs, deterministic=False)
                                 obs, _, terminated, truncated, info = test_env.step(action)
                                 done = terminated or truncated
                             except Exception as e:
@@ -231,6 +233,8 @@ def main():
                                 done = terminated or truncated
                                 logger.warning(f"Error during evaluation: {e}")
                                 continue
+                            
+                            logger.debug(f"Action: {action}")
                             
                             # Store daily returns (already in decimal form)
                             daily_return = info["portfolio_return"]  # Already in decimal form (e.g., 0.01 = 1%)
@@ -290,17 +294,6 @@ def main():
                         logger.warning(f"Seed {eval_seed} evaluation failed ({attempts}/{max_attempts}): {str(e)}")
                         if attempts >= max_attempts:
                             logger.warning(f"Skipping seed {eval_seed} evaluation")
-                
-                # Save intermediate results (every 100 episodes)
-                if len(results) % 100 == 0 and len(results) > 0:
-                    avg_sharpe = np.mean([r["sharpe"] for r in results])
-                    avg_return = np.mean([r["total_return"] for r in results])
-                    avg_vol = np.mean([r["vol"] for r in results])
-                    
-                    logger.info(f"\n===== Intermediate Evaluation Results ({len(results)} episodes) =====")
-                    logger.info(f"Average Return: {avg_return:.4f}%")
-                    logger.info(f"Average Volatility: {avg_vol:.4f}%")
-                    logger.info(f"Average Sharpe: {avg_sharpe:.4f}")
             
             # Final evaluation results summary
             if results:

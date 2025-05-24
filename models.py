@@ -36,11 +36,11 @@ class CustomMlpExtractor(nn.Module):
         self.policy_net = nn.Sequential(*policy_layers)
         self.value_net = nn.Sequential(*value_layers)
         
-        # Conservative initialization for stability
+        # Better initialization for stability (less conservative)
         for module in self.modules():
             if isinstance(module, nn.Linear):
-                # Use Xavier initialization (suitable for Tanh activation)
-                nn.init.xavier_normal_(module.weight, gain=0.01)
+                # Use standard Xavier initialization
+                nn.init.xavier_normal_(module.weight, gain=1.0)  # Increased gain from 0.01 to 1.0
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
         
@@ -50,18 +50,40 @@ class CustomMlpExtractor(nn.Module):
         print(f"Value network: {self.value_net}")
     
     def forward_actor(self, features):
-        # Check for NaN values
-        if th.isnan(features).any():
-            features = th.nan_to_num(features)
+        # Enhanced NaN checking
+        if th.isnan(features).any() or th.isinf(features).any():
+            logger.warning("NaN or Inf detected in actor features")
+            features = th.nan_to_num(features, nan=0.0, posinf=1.0, neginf=-1.0)
         
-        return self.policy_net(features)
+        output = self.policy_net(features)
+        
+        # Check output for NaN/Inf and clip to reasonable range
+        if th.isnan(output).any() or th.isinf(output).any():
+            logger.warning("NaN or Inf detected in actor output")
+            output = th.nan_to_num(output, nan=0.0, posinf=2.0, neginf=-2.0)
+        
+        # Clip output to prevent extreme values
+        output = th.clamp(output, min=-5.0, max=5.0)
+        
+        return output
     
     def forward_critic(self, features):
-        # Check for NaN values
-        if th.isnan(features).any():
-            features = th.nan_to_num(features)
+        # Enhanced NaN checking
+        if th.isnan(features).any() or th.isinf(features).any():
+            logger.warning("NaN or Inf detected in critic features")
+            features = th.nan_to_num(features, nan=0.0, posinf=1.0, neginf=-1.0)
             
-        return self.value_net(features)
+        output = self.value_net(features)
+        
+        # Check output for NaN/Inf and clip to reasonable range
+        if th.isnan(output).any() or th.isinf(output).any():
+            logger.warning("NaN or Inf detected in critic output")
+            output = th.nan_to_num(output, nan=0.0, posinf=10.0, neginf=-10.0)
+        
+        # Clip output to prevent extreme values
+        output = th.clamp(output, min=-20.0, max=20.0)
+        
+        return output
     
     def forward(self, features):
         """Do not call directly - maintained for compatibility"""
@@ -101,7 +123,68 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         feature_dim = self.features_extractor.features_dim
         self.mlp_extractor = CustomMlpExtractor(feature_dim, net_arch, activation_fn)
         
+        # CRITICAL: Reinitialize action_net and value_net to prevent NaN issues
+        self._reinitialize_networks()
+        
         print("Initialized NormalizedActorCriticPolicy")
+    
+    def _reinitialize_networks(self):
+        """Reinitialize the action and value networks with safe parameters"""
+        # Reinitialize action_net (creates distribution parameters)
+        if hasattr(self, 'action_net'):
+            for layer in self.action_net.modules():
+                if isinstance(layer, nn.Linear):
+                    # Conservative initialization to prevent exploding gradients
+                    nn.init.xavier_uniform_(layer.weight, gain=0.1)
+                    if layer.bias is not None:
+                        nn.init.zeros_(layer.bias)
+        
+        # Reinitialize value_net
+        if hasattr(self, 'value_net'):
+            for layer in self.value_net.modules():
+                if isinstance(layer, nn.Linear):
+                    # Conservative initialization
+                    nn.init.xavier_uniform_(layer.weight, gain=0.1) 
+                    if layer.bias is not None:
+                        nn.init.zeros_(layer.bias)
+
+    def _get_action_dist_from_latent(self, latent_pi):
+        """Override to add NaN safety at distribution creation"""
+        # Check input for NaN/Inf
+        if th.isnan(latent_pi).any() or th.isinf(latent_pi).any():
+            logger.warning("NaN/Inf in latent_pi for distribution creation")
+            latent_pi = th.nan_to_num(latent_pi, nan=0.0, posinf=1.0, neginf=-1.0)
+        
+        # Get mean actions from the policy network
+        mean_actions = self.action_net(latent_pi)
+        
+        # Critical NaN check on mean_actions
+        if th.isnan(mean_actions).any() or th.isinf(mean_actions).any():
+            logger.warning("NaN/Inf detected in mean_actions, using safe fallback")
+            batch_size = latent_pi.shape[0]
+            mean_actions = th.zeros((batch_size, self.action_space.shape[0]), device=latent_pi.device)
+        
+        # Clamp mean actions to reasonable range
+        mean_actions = th.clamp(mean_actions, min=-5.0, max=5.0)
+        
+        # Create distribution with fixed log_std to prevent NaN in scale
+        if self.use_sde:
+            return self.action_dist.proba_distribution(mean_actions, self.log_std)
+        else:
+            # Use a safe, fixed log_std to prevent scale issues
+            safe_log_std = th.full_like(mean_actions, -1.0)  # std = exp(-1) ≈ 0.37
+            
+            # Ensure log_std doesn't have NaN/Inf
+            if hasattr(self, 'log_std'):
+                original_log_std = self.log_std
+                if th.isnan(original_log_std).any() or th.isinf(original_log_std).any():
+                    logger.warning("NaN/Inf in log_std, using safe fallback")
+                    self.log_std.data = safe_log_std[0]  # Use safe values
+                else:
+                    # Clamp to reasonable range
+                    self.log_std.data = th.clamp(original_log_std, min=-3.0, max=1.0)
+            
+            return self.action_dist.proba_distribution(mean_actions, self.log_std)
     
     def predict(self, observation, state=None, episode_start=None, deterministic=False):
         """
@@ -129,54 +212,112 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         return actions_np, state
     
     def forward(self, obs, deterministic=False):
-        # Safe observation handling
-        if th.isnan(obs).any():
-            obs = th.nan_to_num(obs)
+        # Enhanced observation handling with better error checking
+        if th.isnan(obs).any() or th.isinf(obs).any():
+            logger.warning("NaN or Inf detected in observations, applying nan_to_num")
+            obs = th.nan_to_num(obs, nan=0.0, posinf=1.0, neginf=-1.0)
         
         # Extract features
         features = self.extract_features(obs)
+        
+        # Check features for NaN/Inf
+        if th.isnan(features).any() or th.isinf(features).any():
+            logger.warning("NaN or Inf detected in features, applying nan_to_num")
+            features = th.nan_to_num(features, nan=0.0, posinf=1.0, neginf=-1.0)
         
         # Actor/critic networks
         latent_pi = self.mlp_extractor.forward_actor(features)
         latent_vf = self.mlp_extractor.forward_critic(features)
         
+        # Check latent representations for NaN/Inf
+        if th.isnan(latent_pi).any() or th.isinf(latent_pi).any():
+            logger.warning("NaN or Inf detected in latent_pi, applying nan_to_num")
+            latent_pi = th.nan_to_num(latent_pi, nan=0.0, posinf=1.0, neginf=-1.0)
+            
+        if th.isnan(latent_vf).any() or th.isinf(latent_vf).any():
+            logger.warning("NaN or Inf detected in latent_vf, applying nan_to_num")
+            latent_vf = th.nan_to_num(latent_vf, nan=0.0, posinf=1.0, neginf=-1.0)
+        
         # Calculate values
         values = self.value_net(latent_vf)
         
-        # Action distribution
+        # Check values for NaN/Inf
+        if th.isnan(values).any() or th.isinf(values).any():
+            logger.warning("NaN or Inf detected in values, applying nan_to_num")
+            values = th.nan_to_num(values, nan=0.0, posinf=10.0, neginf=-10.0)
+        
+        # Action distribution - with safer parameters
         distribution = self._get_action_dist_from_latent(latent_pi)
         
+        # Check distribution parameters
+        if hasattr(distribution.distribution, 'loc'):
+            loc = distribution.distribution.loc
+            scale = distribution.distribution.scale
+            
+            if th.isnan(loc).any() or th.isinf(loc).any():
+                logger.warning("NaN or Inf detected in distribution loc")
+                # Create a safe fallback action
+                batch_size = obs.shape[0]
+                safe_actions = th.zeros((batch_size, self.action_space.shape[0]), device=obs.device)
+                safe_log_prob = th.zeros((batch_size,), device=obs.device)
+                return safe_actions, values, safe_log_prob
+                
+            if th.isnan(scale).any() or th.isinf(scale).any() or (scale <= 0).any():
+                logger.warning("NaN, Inf, or non-positive values detected in distribution scale")
+                batch_size = obs.shape[0]
+                safe_actions = th.zeros((batch_size, self.action_space.shape[0]), device=obs.device)
+                safe_log_prob = th.zeros((batch_size,), device=obs.device)
+                return safe_actions, values, safe_log_prob
+        
         # Sample actions
-        actions = distribution.get_actions(deterministic=deterministic)
+        try:
+            actions = distribution.get_actions(deterministic=deterministic)
+            log_prob = distribution.log_prob(actions)
+        except Exception as e:
+            logger.warning(f"Error sampling actions: {e}")
+            batch_size = obs.shape[0]
+            safe_actions = th.zeros((batch_size, self.action_space.shape[0]), device=obs.device)
+            safe_log_prob = th.zeros((batch_size,), device=obs.device)
+            return safe_actions, values, safe_log_prob
         
-        # IMPORTANT: Calculate log probabilities BEFORE any transformation
-        log_prob = distribution.log_prob(actions)
+        # Check sampled actions for NaN/Inf
+        if th.isnan(actions).any() or th.isinf(actions).any():
+            logger.warning("NaN or Inf detected in sampled actions")
+            batch_size = obs.shape[0]
+            safe_actions = th.zeros((batch_size, self.action_space.shape[0]), device=obs.device)
+            safe_log_prob = th.zeros((batch_size,), device=obs.device)
+            return safe_actions, values, safe_log_prob
         
-        # Portfolio weights normalization: Mean 0, Sum of |weights| = 1
-        # This is standard for market-neutral portfolio strategies
+        # IMPROVED Portfolio weights normalization with better error handling
+        try:
+            # Step 1: Apply tanh to bound the actions first (more stable)
+            bounded_actions = th.tanh(actions)
+            
+            # Step 2: Center the actions to have mean 0
+            actions_mean = th.mean(bounded_actions, dim=1, keepdim=True)
+            centered_actions = bounded_actions - actions_mean
+            
+            # Step 3: Normalize so sum of absolute values = 1 (total exposure = 1)
+            abs_sum = th.sum(th.abs(centered_actions), dim=1, keepdim=True)
+            abs_sum = th.clamp(abs_sum, min=1e-6)  # Increased minimum to prevent division issues
+            
+            normalized_actions = centered_actions / abs_sum
+            
+            # Final safety check
+            if th.isnan(normalized_actions).any() or th.isinf(normalized_actions).any():
+                logger.warning("NaN or Inf detected in normalized actions, using zero actions")
+                batch_size = obs.shape[0]
+                normalized_actions = th.zeros((batch_size, self.action_space.shape[0]), device=obs.device)
+            
+            # Reshape actions
+            final_actions = normalized_actions.reshape((-1, *self.action_space.shape))
+            
+        except Exception as e:
+            logger.warning(f"Error in action normalization: {e}")
+            batch_size = obs.shape[0]
+            final_actions = th.zeros((batch_size, self.action_space.shape[0]), device=obs.device)
         
-        # Step 1: Center the actions to have mean 0
-        actions_mean = th.mean(actions, dim=1, keepdim=True)
-        centered_actions = actions - actions_mean
-        
-        # Step 2: Apply tanh to bound the actions for stability
-        bounded_actions = th.tanh(centered_actions)
-        
-        # Step 3: Normalize so sum of absolute values = 1 (total exposure = 1)
-        abs_sum = th.sum(th.abs(bounded_actions), dim=1, keepdim=True)
-        abs_sum = th.clamp(abs_sum, min=1e-8)  # Prevent division by zero
-        
-        normalized_actions = bounded_actions / abs_sum
-        
-        # Alternative: Standard normalization (mean=0, std=1) - uncomment to use
-        # actions_mean = th.mean(actions, dim=1, keepdim=True)
-        # actions_std = th.std(actions, dim=1, keepdim=True) + 1e-8
-        # normalized_actions = (actions - actions_mean) / actions_std
-        
-        # Reshape actions
-        actions = normalized_actions.reshape((-1, *self.action_space.shape))
-        
-        return actions, values, log_prob
+        return final_actions, values, log_prob
 
 
 def create_ppo_model(env, policy_kwargs=None, device="cpu"):
@@ -188,8 +329,8 @@ def create_ppo_model(env, policy_kwargs=None, device="cpu"):
     # Default policy keyword arguments optimized for portfolio weights
     if policy_kwargs is None:
         policy_kwargs = dict(
-            net_arch=dict(pi=[256, 256, 128], vf=[256, 256, 128]),  # Larger networks
-            activation_fn=nn.Tanh  # Better for portfolio optimization
+            net_arch=dict(pi=[64, 64, 32], vf=[64, 64, 32]),  # Larger networks
+            activation_fn=nn.ReLU  # Better for portfolio optimization
         )
     
     # Create PPO model with parameters tuned for portfolio optimization

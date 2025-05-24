@@ -210,6 +210,14 @@ HTML_TEMPLATE = """
                     <span class="metric-label">Latest Sharpe Ratio:</span>
                     <span class="metric-value" id="lastSharpe">-</span>
                 </div>
+                <div class="metric-card">
+                    <span class="metric-label">Last ep_rew_mean:</span>
+                    <span class="metric-value" id="lastEpRewMean">-</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-label">Last explained_variance:</span>
+                    <span class="metric-value" id="lastExplainedVariance">-</span>
+                </div>
             </div>
         </div>
         
@@ -235,6 +243,8 @@ HTML_TEMPLATE = """
         const currentStep = document.getElementById('currentStep');
         const bestReturn = document.getElementById('bestReturn');
         const lastSharpe = document.getElementById('lastSharpe');
+        const lastEpRewMean = document.getElementById('lastEpRewMean');
+        const lastExplainedVariance = document.getElementById('lastExplainedVariance');
         const metricsLoader = document.getElementById('metricsLoader');
         const resultsPanel = document.getElementById('results-panel');
         const performanceImg = document.getElementById('performance-img');
@@ -441,7 +451,29 @@ HTML_TEMPLATE = """
                 if (sharpeMatch) {
                     lastSharpe.textContent = sharpeMatch[1];
                 }
-            } else if (data.message.includes('cycle completed successfully')) {
+            }
+            // ep_rew_mean
+            if (data.message.includes('ep_rew_mean')) {
+                // Try to match: ep_rew_mean: <number>
+                // Match both "ep_rew_mean: <number>" and table-style "| ep_rew_mean | <number> |"
+                const epRewMatch = data.message.match(/ep_rew_mean\s*[:=|]?\s*([-\d.]+)/i) ||
+                                   data.message.match(/\|\s*ep_rew_mean\s*\|?\s*([-\d.]+)\s*\|/i);
+                if (epRewMatch) {
+                    lastEpRewMean.textContent = epRewMatch[1];
+                }
+            }
+            // explained_variance
+            if (data.message.includes('explained_variance')) {
+                // Try to match: explained_variance: <number>
+                // Match both "explained_variance: <number>" and table-style "| explained_variance | <number> |"
+                const expVarMatch = data.message.match(/explained_variance\s*[:=|]?\s*([-\d.eE+]+)/i) ||
+                                    data.message.match(/\|\s*explained_variance\s*\|?\s*([-\d.eE+]+)\s*\|/i);
+                if (expVarMatch) {
+                    lastExplainedVariance.textContent = expVarMatch[1];
+                }
+            }
+            // Highlighting and image update logic
+            if (data.message.includes('cycle completed successfully')) {
                 // Highlight successful cycle completion
                 logEntry.style.backgroundColor = '#d4edda';
                 logEntry.style.color = '#155724';
@@ -466,8 +498,7 @@ HTML_TEMPLATE = """
             }
             
             // Update status for infinite training
-            if (data.message.includes('Training completed') || 
-                data.message.includes('Model evaluation completed') ||
+            if (data.message.includes('Model evaluation completed') ||
                 data.message.includes('stopped successfully') ||
                 data.message.includes('Infinite training completed')) {
                 updateButtonState(false);
