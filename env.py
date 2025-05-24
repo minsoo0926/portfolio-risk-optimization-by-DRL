@@ -3,6 +3,7 @@ import numpy as np
 from generate_scenario import generate_scenario
 import logging
 from app.utils import setup_logger
+import pandas as pd
 
 # Get logger
 logger = setup_logger()
@@ -19,8 +20,28 @@ class PortfolioEnv(gym.Env):
         # Load data for the current episode
         self.seed = seed
         data = None
-        while data is None:
-            data = generate_scenario(10, seed)
+        max_attempts = 10
+        attempt = 0
+        
+        while data is None and attempt < max_attempts:
+            data = generate_scenario(10, seed + attempt)
+            attempt += 1
+            
+        if data is None:
+            logger.error(f"Failed to generate scenario after {max_attempts} attempts")
+            # Create dummy data as fallback
+            dates = pd.date_range('2020-01-01', periods=252, freq='D')
+            dummy_data = pd.DataFrame({
+                'Date': dates,
+                **{f'S{i}_return': np.random.normal(0.001, 0.02, 252) for i in range(1, 11)},
+                **{f'S{i}_ma': np.random.normal(0.001, 0.01, 252) for i in range(1, 11)},
+                **{f'S{i}_vol': np.random.uniform(0.01, 0.05, 252) for i in range(1, 11)},
+                **{f'S{i}_rvol': np.random.uniform(0.8, 1.2, 252) for i in range(1, 11)},
+                'VIX': np.random.uniform(15, 35, 252),
+                'Treasury_5Y': np.random.uniform(1.5, 3.5, 252)
+            })
+            data = dummy_data
+            logger.warning("Using dummy data as fallback")
         
         # Use data excluding the first column (date, etc.)
         self.market_data = data.iloc[:, 1:41].values  # Stock data (10 stocks * 4 features = 40)

@@ -213,15 +213,15 @@ def main():
         model_path = "ppo_portfolio"
         total_timesteps = 500000  # Increased training steps
         eval_episodes = 10
-        save_freq = 10000
-        eval_freq = 20000
+        save_freq = 20000  # Less frequent saving
+        eval_freq = 40000  # Less frequent evaluation
 
         # Ensure diversity in training data
         np.random.seed(int(time.time()))
-        train_seeds = np.random.randint(0, 10000, size=10)  # Use multiple seeds
+        train_seeds = np.random.randint(0, 10000, size=5)  # Reduced to 5 environments
         logger.info(f"Training seeds: {train_seeds}")
         
-        # Train across multiple environments
+        # Create training environments
         train_envs = [PortfolioEnv(seed=seed) for seed in train_seeds]
         logger.info(f"Environments created: {len(train_envs)} environments")
         
@@ -236,84 +236,131 @@ def main():
                 logger.warning(f"Failed to load existing model: {e}")
                 logger.info("Creating new model.")
                 
-                # Create model using our custom function
+                # Create model with improved hyperparameters
                 policy_kwargs = dict(
-                    net_arch=dict(pi=[128, 128, 64], vf=[128, 128, 64]),
-                    activation_fn=torch.nn.ReLU
+                    net_arch=dict(pi=[256, 256, 128], vf=[256, 256, 128]),  # Larger networks
+                    activation_fn=torch.nn.Tanh  # Better for financial data
                 )
-                model = create_ppo_model(train_envs[0], policy_kwargs=policy_kwargs, device=device)
+                
+                model = PPO(
+                    NormalizedActorCriticPolicy,
+                    train_envs[0],
+                    policy_kwargs=policy_kwargs,
+                    learning_rate=3e-5,  # Lower learning rate
+                    n_steps=512,  # Better for ~252 step episodes 
+                    batch_size=64,  # Smaller batch size
+                    gamma=0.995,  # Slightly higher discount for financial data
+                    ent_coef=0.005,  # Lower entropy for more stable policies
+                    clip_range=0.15,  # Slightly higher clip range
+                    vf_coef=0.25,  # Lower value function coefficient
+                    max_grad_norm=0.5,
+                    verbose=2,
+                    device=device
+                )
                 logger.info("PPO model created successfully")
         else:
-            # Create new model using our custom function
+            # Create new model with improved hyperparameters
             policy_kwargs = dict(
-                net_arch=dict(pi=[128, 128, 64], vf=[128, 128, 64]),
-                activation_fn=torch.nn.ReLU
+                net_arch=dict(pi=[256, 256, 128], vf=[256, 256, 128]),  # Larger networks
+                activation_fn=torch.nn.Tanh  # Better for financial data
             )
-            model = create_ppo_model(train_envs[0], policy_kwargs=policy_kwargs, device=device)
+            
+            model = PPO(
+                NormalizedActorCriticPolicy,
+                train_envs[0],
+                policy_kwargs=policy_kwargs,
+                learning_rate=3e-5,  # Lower learning rate
+                n_steps=512,  # Better for ~252 step episodes
+                batch_size=64,  # Smaller batch size  
+                gamma=0.995,  # Slightly higher discount for financial data
+                ent_coef=0.005,  # Lower entropy for more stable policies
+                clip_range=0.15,  # Slightly higher clip range
+                vf_coef=0.25,  # Lower value function coefficient
+                max_grad_norm=0.5,
+                verbose=2,
+                device=device
+            )
             logger.info("New PPO model created successfully")
         
         # Create evaluation environment
         eval_env = PortfolioEnv(seed=9999)
         callback = CustomCallback(
             eval_env=eval_env,
-            save_freq=save_freq,   # Save more frequently
-            eval_freq=eval_freq,   # Evaluate more frequently
+            save_freq=save_freq,
+            eval_freq=eval_freq,
             model_path=model_path
         )
         logger.info("Evaluation environment and callback setup complete")
         
-        # Train alternating between environments
-        learning_steps_per_env = 5000
-        logger.info(f"Training plan: Total {total_timesteps} steps, {learning_steps_per_env} steps per environment")
+        # IMPROVED TRAINING STRATEGY: Longer training per environment
+        steps_per_env = 100000  # Much longer training per environment
+        logger.info(f"Training plan: Total {total_timesteps} steps, {steps_per_env} steps per environment")
         
-        for cycle in range(total_timesteps // (len(train_envs) * learning_steps_per_env)):
-            logger.info(f"\n===== Starting Training Cycle {cycle+1} =====")
+        best_performance = -np.inf
+        patience = 3  # Early stopping patience
+        no_improvement_count = 0
+        
+        # Train on each environment for longer periods
+        for env_idx, env in enumerate(train_envs):
+            if total_timesteps <= 0:
+                break
+                
+            current_steps = min(steps_per_env, total_timesteps)
+            logger.info(f"\n===== Training on Environment {env_idx+1}/{len(train_envs)} (seed {train_seeds[env_idx]}) =====")
+            logger.info(f"Training for {current_steps} steps")
             
-            for env_idx, env in enumerate(train_envs):
-                try:
-                    model.set_env(env)  # Change environment
+            try:
+                model.set_env(env)
+                
+                # Train for extended period on this environment
+                model.learn(
+                    total_timesteps=current_steps,
+                    reset_num_timesteps=False,
+                    callback=callback
+                )
+                
+                logger.info(f"Completed training on environment {env_idx+1}")
+                total_timesteps -= current_steps
+                
+                # Evaluate performance after each environment
+                logger.info(f"\n----- Evaluating After Environment {env_idx+1} Training -----")
+                obs, _ = eval_env.reset()
+                done = False
+                returns = []
+                
+                while not done:
+                    try:
+                        action, _ = model.predict(obs, deterministic=True)
+                        obs, _, terminated, truncated, info = eval_env.step(action)
+                        done = terminated or truncated
+                        returns.append(info["portfolio_return"])
+                    except Exception as e:
+                        action = np.zeros(eval_env.action_space.shape)
+                        obs, _, terminated, truncated, info = eval_env.step(action)
+                        done = terminated or truncated
+                        logger.warning(f"Error during evaluation: {e}")
+                        continue
+                
+                current_performance = np.mean(returns)
+                logger.info(f"Environment {env_idx+1} evaluation - Average return: {current_performance:.6f}")
+                
+                # Early stopping check
+                if current_performance > best_performance:
+                    best_performance = current_performance
+                    no_improvement_count = 0
+                    model.save(f"{model_path}_best_env_{env_idx+1}")
+                    logger.info(f"New best performance: {best_performance:.6f}")
+                else:
+                    no_improvement_count += 1
+                    logger.info(f"No improvement for {no_improvement_count} environments")
+                
+                if no_improvement_count >= patience:
+                    logger.info(f"Early stopping triggered after {patience} environments without improvement")
+                    break
                     
-                    # Use callback only in the last environment
-                    if env_idx == len(train_envs) - 1:
-                        logger.info(f"Starting training on environment {env_idx+1}/{len(train_envs)} (seed {train_seeds[env_idx]}) with evaluation")
-                        model.learn(total_timesteps=learning_steps_per_env, 
-                                   reset_num_timesteps=False, 
-                                   callback=callback)
-                    else:
-                        logger.info(f"Starting training on environment {env_idx+1}/{len(train_envs)} (seed {train_seeds[env_idx]})")
-                        model.learn(total_timesteps=learning_steps_per_env,
-                                   reset_num_timesteps=False)
-                    
-                    logger.info(f"Completed training on environment {env_idx+1} (seed {train_seeds[env_idx]})")
-                    
-                    # Run separate evaluation after each environment
-                    if env_idx % 3 == 0:  # Evaluate every 3 environments
-                        logger.info("\n----- Intermediate Evaluation After Environment Training -----")
-                        obs, _ = eval_env.reset()
-                        done = False
-                        rewards = []
-                        while not done:
-                            try:
-                                action, _ = model.predict(obs, deterministic=True)
-                                obs, _, terminated, truncated, info = eval_env.step(action)
-                                done = terminated or truncated
-                                rewards.append(info["portfolio_return"])
-                            except Exception as e:
-                                action = np.zeros(eval_env.action_space.shape) # dummy action
-                                obs, _, terminated, truncated, info = eval_env.step(action)
-                                done = terminated or truncated
-                                logger.warning(f"Error during evaluation: {e}")
-                                continue
-                        logger.info(f"Intermediate evaluation average return: {np.mean(rewards):.4f}")
-                    
-                except Exception as e:
-                    logger.error(f"Error during training on environment {env_idx+1}: {e}")
-                    continue
-            
-            # Force evaluation after each cycle
-            # if cycle > 0 and cycle % 2 == 0:  # Every 2 cycles
-            #     logger.info("\n----- Forced Evaluation After Cycle Completion -----")
-            #     callback._evaluate_model()
+            except Exception as e:
+                logger.error(f"Error during training on environment {env_idx+1}: {e}")
+                continue
         
         # Save final model
         model.save(model_path)
@@ -452,25 +499,19 @@ if __name__ == '__main__':
     logger.info("Web interface running at http://localhost:8000")
     time.sleep(1)  # Give server time to start
     
-    iteration = 0
+    try:
+        logger.info(f"\n===== Starting Portfolio Optimization Training =====")
+        main()
+        logger.info(f"Training completed successfully")
+        
+    except KeyboardInterrupt:
+        logger.info("Training interrupted by user")
+    except Exception as e:
+        logger.error(f"Training failed: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Log error for debugging
+        with open("error_log.txt", "a") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Training Error: {str(e)}\n")
     
-    while True:  # Infinite loop
-        try:
-            logger.info(f"\n===== Starting Training Iteration #{iteration+1} =====")
-            main()
-            iteration += 1
-            logger.info(f"Completed Training Iteration #{iteration}")
-            
-            # Optional: Wait to prevent server overload
-            time.sleep(10)  # Wait 10 seconds
-            
-        except Exception as e:
-            logger.error(f"Execution failed (Iteration #{iteration+1}): {str(e)}")
-            logger.error(traceback.format_exc())
-            
-            # Wait before retrying after error
-            time.sleep(60)  # Wait 1 minute
-            
-            # Optional: Log serious errors
-            with open("error_log.txt", "a") as f:
-                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Iteration #{iteration+1} Error: {str(e)}\n")
+    logger.info("Program finished")
