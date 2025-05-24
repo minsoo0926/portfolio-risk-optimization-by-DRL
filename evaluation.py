@@ -73,7 +73,7 @@ def safe_model_load(model_path, max_retries=5, retry_delay=2):
                 logger.error(f"Failed to load model after {max_retries} attempts")
                 raise
 
-def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
+def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False, log_weights=True):
     """
     Evaluates the trained model and visualizes portfolio value trends.
     
@@ -82,6 +82,7 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
         seed: Seed to use for evaluation
         initial_capital: Initial investment amount
         debug: Whether to output debugging information
+        log_weights: Whether to log detailed weights history
     """
     try:
         if seed is None:
@@ -115,6 +116,14 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
         portfolio_value = initial_capital
         
         logger.info("Starting portfolio simulation...")
+        
+        # Initialize weights logging
+        if log_weights:
+            logger.info("="*60)
+            logger.info("WEIGHTS HISTORY LOGGING ENABLED")
+            logger.info("="*60)
+            weights_log_file = f"weights_history_{seed}_{int(time.time())}.txt"
+            
         while not done:
             try:
                 action, _ = model.predict(obs, deterministic=True)
@@ -149,8 +158,33 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
             returns.append(daily_return)
             vols.append(info["portfolio_vol"])
             
-            # Store weights
-            weights_history.append(env.previous_action.copy())
+            # Store and log weights
+            current_weights = env.previous_action.copy()
+            weights_history.append(current_weights)
+            
+            # Detailed weights logging
+            if log_weights:
+                # Log every 10 steps to avoid overwhelming output
+                if step % 10 == 0 or step < 5:
+                    logger.info(f"Step {step:3d}: Weights = [{', '.join([f'{w:6.3f}' for w in current_weights])}]")
+                    logger.info(f"         Return = {daily_return:7.4f}, Vol = {info['portfolio_vol']:6.4f}, Turnover = {turnover:6.4f}")
+                
+                # Log weights statistics every 50 steps
+                if step % 50 == 0 and step > 0:
+                    weights_array = np.array(weights_history)
+                    logger.info(f"\n--- Weights Statistics (Steps 0-{step}) ---")
+                    logger.info(f"Mean weights:     [{', '.join([f'{w:6.3f}' for w in np.mean(weights_array, axis=0)])}]")
+                    logger.info(f"Std weights:      [{', '.join([f'{w:6.3f}' for w in np.std(weights_array, axis=0)])}]")
+                    logger.info(f"Max weights:      [{', '.join([f'{w:6.3f}' for w in np.max(weights_array, axis=0)])}]")
+                    logger.info(f"Min weights:      [{', '.join([f'{w:6.3f}' for w in np.min(weights_array, axis=0)])}]")
+                    
+                    # Log concentration metrics
+                    avg_weights = np.mean(weights_array, axis=0)
+                    concentration = np.sum(avg_weights ** 2)  # Herfindahl index
+                    max_weight = np.max(np.abs(avg_weights))
+                    logger.info(f"Concentration:    {concentration:.4f} (lower = more diversified)")
+                    logger.info(f"Max weight:       {max_weight:.4f}")
+                    logger.info("-" * 50)
             
             step += 1
             
@@ -159,6 +193,61 @@ def evaluate_model(model_path, seed=None, initial_capital=10000, debug=False):
                 logger.info(f"Simulation progress: {step}/{env.max_steps} ({step/env.max_steps*100:.1f}%)")
         
         logger.info(f"Portfolio simulation completed: {step} days")
+        
+        # Final weights analysis
+        if log_weights and weights_history:
+            logger.info("\n" + "="*60)
+            logger.info("FINAL WEIGHTS ANALYSIS")
+            logger.info("="*60)
+            
+            weights_array = np.array(weights_history)
+            
+            # Overall statistics
+            logger.info(f"Total trading days: {len(weights_history)}")
+            logger.info(f"Final weights:    [{', '.join([f'{w:6.3f}' for w in weights_history[-1]])}]")
+            logger.info(f"Average weights:  [{', '.join([f'{w:6.3f}' for w in np.mean(weights_array, axis=0)])}]")
+            logger.info(f"Weight volatility:[{', '.join([f'{w:6.3f}' for w in np.std(weights_array, axis=0)])}]")
+            
+            # Portfolio characteristics
+            avg_concentration = np.mean([np.sum(w**2) for w in weights_array])
+            avg_turnover = np.mean(turnovers)
+            max_single_weight = np.max(np.abs(weights_array))
+            
+            logger.info(f"\nPortfolio Characteristics:")
+            logger.info(f"Average concentration: {avg_concentration:.4f}")
+            logger.info(f"Average turnover:      {avg_turnover:.4f}")
+            logger.info(f"Maximum single weight: {max_single_weight:.4f}")
+            
+            # Long/short analysis
+            long_positions = weights_array > 0
+            short_positions = weights_array < 0
+            
+            avg_long_weight = np.mean(weights_array[long_positions]) if np.any(long_positions) else 0
+            avg_short_weight = np.mean(weights_array[short_positions]) if np.any(short_positions) else 0
+            long_ratio = np.mean(np.sum(long_positions, axis=1)) / weights_array.shape[1]
+            
+            logger.info(f"\nLong/Short Analysis:")
+            logger.info(f"Average long weight:   {avg_long_weight:.4f}")
+            logger.info(f"Average short weight:  {avg_short_weight:.4f}")
+            logger.info(f"Long positions ratio:  {long_ratio:.4f} ({long_ratio*100:.1f}%)")
+            
+            # Save weights history to file
+            try:
+                with open(weights_log_file, 'w') as f:
+                    f.write("# Portfolio Weights History\n")
+                    f.write(f"# Model: {model_path}, Seed: {seed}\n")
+                    f.write(f"# Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("# Columns: Step, Date, Stock1, Stock2, ..., Stock10, Return, Volatility, Turnover\n")
+                    
+                    for i, (date, weights, ret, vol, turn) in enumerate(zip(dates, weights_history, returns, vols, turnovers)):
+                        f.write(f"{i:3d}, {date.strftime('%Y-%m-%d')}, ")
+                        f.write(", ".join([f"{w:8.5f}" for w in weights]))
+                        f.write(f", {ret:8.5f}, {vol:8.5f}, {turn:8.5f}\n")
+                
+                logger.info(f"Weights history saved to: {weights_log_file}")
+            
+            except Exception as e:
+                logger.warning(f"Failed to save weights history: {e}")
         
         # Calculate performance metrics
         total_return = (portfolio_values[-1] / initial_capital - 1) * 100
@@ -217,10 +306,10 @@ def create_performance_charts(dates, portfolio_values, returns, net_returns, wei
     """
     try:
         # Portfolio performance chart
-        plt.figure(figsize=(14, 10))
+        plt.figure(figsize=(16, 12))
         
         # Portfolio value chart
-        plt.subplot(2, 1, 1)
+        plt.subplot(3, 2, 1)
         plt.plot(dates, portfolio_values, 'b-', linewidth=2)
         plt.title('Portfolio Value Over Time', fontsize=15)
         plt.ylabel('Portfolio Value ($)', fontsize=12)
@@ -230,7 +319,7 @@ def create_performance_charts(dates, portfolio_values, returns, net_returns, wei
         plt.xticks(rotation=45)
         
         # Daily returns chart
-        plt.subplot(2, 1, 2)
+        plt.subplot(3, 2, 2)
         plt.plot(dates, [r * 100 for r in returns], 'g-', alpha=0.7, linewidth=1, label='Gross Returns')
         plt.plot(dates, [r * 100 for r in net_returns], 'r-', linewidth=1, label='Net Returns (after costs)')
         
@@ -242,12 +331,8 @@ def create_performance_charts(dates, portfolio_values, returns, net_returns, wei
         plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
         plt.xticks(rotation=45)
         
-        plt.tight_layout()
-        plt.savefig('portfolio_performance.png', dpi=100, bbox_inches='tight')
-        plt.close()  # Close figure to free memory
-        
-        # Portfolio weights chart
-        plt.figure(figsize=(14, 8))
+        # Portfolio weights over time
+        plt.subplot(3, 2, 3)
         weights_array = np.array(weights_history)
         
         for i in range(weights_array.shape[1]):
@@ -259,6 +344,107 @@ def create_performance_charts(dates, portfolio_values, returns, net_returns, wei
         plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
         plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+        plt.xticks(rotation=45)
+        
+        # Portfolio concentration over time
+        plt.subplot(3, 2, 4)
+        concentration = [np.sum(w**2) for w in weights_array]
+        plt.plot(dates, concentration, 'purple', linewidth=2)
+        plt.title('Portfolio Concentration (Herfindahl Index)', fontsize=15)
+        plt.ylabel('Concentration', fontsize=12)
+        plt.grid(True)
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+        plt.xticks(rotation=45)
+        
+        # Average weights distribution
+        plt.subplot(3, 2, 5)
+        avg_weights = np.mean(weights_array, axis=0)
+        stock_labels = [f'S{i+1}' for i in range(len(avg_weights))]
+        colors = ['red' if w < 0 else 'green' for w in avg_weights]
+        
+        bars = plt.bar(stock_labels, avg_weights, color=colors, alpha=0.7)
+        plt.title('Average Portfolio Weights', fontsize=15)
+        plt.ylabel('Average Weight', fontsize=12)
+        plt.grid(True, axis='y')
+        plt.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
+        
+        # Add value labels on bars
+        for bar, weight in zip(bars, avg_weights):
+            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + (0.01 if weight > 0 else -0.01),
+                    f'{weight:.3f}', ha='center', va='bottom' if weight > 0 else 'top', fontsize=10)
+        
+        # Weights volatility
+        plt.subplot(3, 2, 6)
+        weight_stds = np.std(weights_array, axis=0)
+        plt.bar(stock_labels, weight_stds, color='orange', alpha=0.7)
+        plt.title('Portfolio Weights Volatility', fontsize=15)
+        plt.ylabel('Standard Deviation', fontsize=12)
+        plt.grid(True, axis='y')
+        
+        # Add value labels on bars
+        for i, std in enumerate(weight_stds):
+            plt.text(i, std + 0.001, f'{std:.3f}', ha='center', va='bottom', fontsize=10)
+        
+        plt.tight_layout()
+        plt.savefig('portfolio_performance.png', dpi=100, bbox_inches='tight')
+        plt.close()  # Close figure to free memory
+        
+        # Separate detailed weights chart
+        plt.figure(figsize=(16, 10))
+        
+        # Individual stock weights over time (larger view)
+        plt.subplot(2, 1, 1)
+        for i in range(weights_array.shape[1]):
+            plt.plot(dates, weights_array[:, i], label=f'Stock {i+1}', linewidth=2, alpha=0.8)
+        
+        plt.title('Detailed Portfolio Weights Over Time', fontsize=16)
+        plt.ylabel('Weight', fontsize=14)
+        plt.grid(True, alpha=0.3)
+        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        plt.axhline(y=0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+        plt.gca().xaxis.set_major_locator(mdates.WeekdayLocator())
+        plt.xticks(rotation=45)
+        
+        # Portfolio statistics over time
+        plt.subplot(2, 1, 2)
+        
+        # Calculate rolling statistics
+        window = min(20, len(weights_array) // 10)  # 20-day or 10% of data window
+        if window >= 5:
+            rolling_concentration = []
+            rolling_max_weight = []
+            rolling_turnover = []
+            
+            for i in range(window-1, len(weights_array)):
+                window_weights = weights_array[max(0, i-window+1):i+1]
+                rolling_concentration.append(np.mean([np.sum(w**2) for w in window_weights]))
+                rolling_max_weight.append(np.mean([np.max(np.abs(w)) for w in window_weights]))
+                
+                if i > 0:
+                    window_turnover = [np.sum(np.abs(weights_array[j] - weights_array[j-1])) 
+                                     for j in range(max(1, i-window+1), i+1)]
+                    rolling_turnover.append(np.mean(window_turnover))
+                else:
+                    rolling_turnover.append(0)
+            
+            dates_subset = dates[window-1:]
+            
+            plt.plot(dates_subset, rolling_concentration, 'purple', linewidth=2, label=f'Concentration ({window}d avg)')
+            plt.plot(dates_subset, rolling_max_weight, 'orange', linewidth=2, label=f'Max Weight ({window}d avg)')
+            plt.plot(dates_subset, rolling_turnover, 'red', linewidth=2, label=f'Turnover ({window}d avg)')
+        else:
+            # Fallback for small datasets
+            plt.plot(dates, concentration, 'purple', linewidth=2, label='Concentration')
+            plt.plot(dates, [np.max(np.abs(w)) for w in weights_array], 'orange', linewidth=2, label='Max Weight')
+        
+        plt.title('Portfolio Risk Metrics Over Time', fontsize=16)
+        plt.ylabel('Metric Value', fontsize=14)
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+        plt.gca().xaxis.set_major_locator(mdates.WeekdayLocator())
         plt.xticks(rotation=45)
         
         plt.tight_layout()
@@ -293,8 +479,10 @@ if __name__ == "__main__":
     try:
         model_path = "ppo_portfolio"
         if os.path.exists(f"{model_path}.zip"):
-            results, weights = evaluate_model(model_path, seed=1234)
+            logger.info("Starting evaluation with weights history logging enabled")
+            results, weights = evaluate_model(model_path, seed=1234, log_weights=True)
             logger.info("Standalone evaluation completed")
+            logger.info("Check the generated weights_history_*.txt file for detailed weights data")
         else:
             logger.warning(f"Model file not found: {model_path}.zip")
     except Exception as e:

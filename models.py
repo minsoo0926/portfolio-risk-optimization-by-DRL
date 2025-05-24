@@ -103,6 +103,31 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         
         print("Initialized NormalizedActorCriticPolicy")
     
+    def predict(self, observation, state=None, episode_start=None, deterministic=False):
+        """
+        Override predict method to ensure normalization is applied
+        """
+        # Convert observation to tensor if needed
+        if isinstance(observation, np.ndarray):
+            obs_tensor = th.tensor(observation, dtype=th.float32)
+        else:
+            obs_tensor = observation
+        
+        # Ensure batch dimension
+        if obs_tensor.dim() == 1:
+            obs_tensor = obs_tensor.unsqueeze(0)
+        
+        # Use our custom forward method
+        with th.no_grad():
+            actions, _, _ = self.forward(obs_tensor, deterministic=deterministic)
+        
+        # Convert back to numpy and remove batch dimension if needed
+        actions_np = actions.detach().cpu().numpy()
+        if actions_np.shape[0] == 1:
+            actions_np = actions_np.squeeze(0)
+        
+        return actions_np, state
+    
     def forward(self, obs, deterministic=False):
         # Safe observation handling
         if th.isnan(obs).any():
@@ -127,16 +152,26 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
         # IMPORTANT: Calculate log probabilities BEFORE any transformation
         log_prob = distribution.log_prob(actions)
         
-        # Center actions
+        # Portfolio weights normalization: Mean 0, Sum of |weights| = 1
+        # This is standard for market-neutral portfolio strategies
+        
+        # Step 1: Center the actions to have mean 0
         actions_mean = th.mean(actions, dim=1, keepdim=True)
         centered_actions = actions - actions_mean
         
-        # Normalize to make absolute values sum to 1
-        abs_sum = th.sum(th.abs(centered_actions), dim=1, keepdim=True)
+        # Step 2: Apply tanh to bound the actions for stability
+        bounded_actions = th.tanh(centered_actions)
+        
+        # Step 3: Normalize so sum of absolute values = 1 (total exposure = 1)
+        abs_sum = th.sum(th.abs(bounded_actions), dim=1, keepdim=True)
         abs_sum = th.clamp(abs_sum, min=1e-8)  # Prevent division by zero
         
-        # Normalized actions
-        normalized_actions = centered_actions / abs_sum
+        normalized_actions = bounded_actions / abs_sum
+        
+        # Alternative: Standard normalization (mean=0, std=1) - uncomment to use
+        # actions_mean = th.mean(actions, dim=1, keepdim=True)
+        # actions_std = th.std(actions, dim=1, keepdim=True) + 1e-8
+        # normalized_actions = (actions - actions_mean) / actions_std
         
         # Reshape actions
         actions = normalized_actions.reshape((-1, *self.action_space.shape))
@@ -146,33 +181,33 @@ class NormalizedActorCriticPolicy(ActorCriticPolicy):
 
 def create_ppo_model(env, policy_kwargs=None, device="cpu"):
     """
-    Function to create a PPO model
+    Function to create a PPO model optimized for portfolio optimization
     """
     from stable_baselines3 import PPO
     
-    # Default policy keyword arguments
+    # Default policy keyword arguments optimized for portfolio weights
     if policy_kwargs is None:
         policy_kwargs = dict(
-            net_arch=dict(pi=[128, 128, 64], vf=[128, 128, 64]),
-            activation_fn=nn.ReLU
+            net_arch=dict(pi=[256, 256, 128], vf=[256, 256, 128]),  # Larger networks
+            activation_fn=nn.Tanh  # Better for portfolio optimization
         )
     
-    # Create PPO model
+    # Create PPO model with parameters tuned for portfolio optimization
     model = PPO(
         NormalizedActorCriticPolicy,
         env,
         policy_kwargs=policy_kwargs,
-        learning_rate=0.0001,
-        n_steps=2048,
-        batch_size=128,
-        gamma=0.99,
-        ent_coef=0.01,
-        clip_range=0.1,
-        vf_coef=0.5,
-        max_grad_norm=0.5,
+        learning_rate=3e-5,  # Lower learning rate for stability
+        n_steps=512,  # Suitable for ~252 step episodes
+        batch_size=64,  # Smaller batch size for better gradient estimates
+        gamma=0.995,  # Slightly higher discount for financial data
+        ent_coef=0.01,  # Moderate entropy for exploration
+        clip_range=0.15,  # Slightly higher clip range
+        vf_coef=0.25,  # Lower value function coefficient
+        max_grad_norm=0.5,  # Gradient clipping for stability
         verbose=2,
         device=device
     )
     
-    print(f"Created PPO model with custom policy on device: {device}")
+    print(f"Created PPO model with portfolio-optimized parameters on device: {device}")
     return model

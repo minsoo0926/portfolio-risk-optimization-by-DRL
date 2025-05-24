@@ -199,7 +199,7 @@ def run_evaluation():
             try:
                 # Run evaluation as subprocess
                 process = subprocess.Popen(
-                    ["python", "-c", "from evaluation import evaluate_model; evaluate_model('./ppo_portfolio', initial_capital=10000)"],
+                    ["python", "-c", "from evaluation import evaluate_model; evaluate_model('./ppo_portfolio', initial_capital=10000, log_weights=True)"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,

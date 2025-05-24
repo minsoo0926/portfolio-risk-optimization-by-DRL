@@ -137,6 +137,21 @@ class PortfolioEnv(gym.Env):
                 
             weights = action
             
+            # DEBUG: Check weights properties for sum of |weights| = 1 normalization
+            weights_sum = np.sum(weights)  # Net exposure
+            weights_abs_sum = np.sum(np.abs(weights))  # Total exposure
+            max_weight = np.max(np.abs(weights))
+            
+            if abs(weights_abs_sum - 1.0) > 0.01:  # Check total exposure
+                logger.debug(f"WARNING: Sum of |weights| = {weights_abs_sum:.4f}, expected ~1.0")
+                logger.debug(f"Weights: {[f'{w:.3f}' for w in weights]}")
+            
+            if abs(weights_sum) > 0.2:  # Check if too far from market neutral
+                logger.debug(f"WARNING: Net exposure = {weights_sum:.4f}, consider market neutral strategy")
+            
+            if max_weight > 0.5:  # Check for extreme concentration
+                logger.debug(f"WARNING: High concentration, max |weight| = {max_weight:.4f}")
+            
             # Move to next time step
             self.current_step += 1
             terminated = self.current_step >= self.max_steps
