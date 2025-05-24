@@ -305,57 +305,58 @@ def create_performance_charts(dates, portfolio_values, returns, net_returns, wei
     Create performance charts without conflicting with training
     """
     try:
-        # Portfolio performance chart
-        plt.figure(figsize=(16, 12))
+        # Portfolio performance chart - INCREASED FIGURE SIZE AND IMPROVED LAYOUT
+        plt.figure(figsize=(18, 14))  # Larger figure size
         
         # Portfolio value chart
         plt.subplot(3, 2, 1)
         plt.plot(dates, portfolio_values, 'b-', linewidth=2)
-        plt.title('Portfolio Value Over Time', fontsize=15)
-        plt.ylabel('Portfolio Value ($)', fontsize=12)
+        plt.title('Portfolio Value Over Time', fontsize=14)  # Reduced font size
+        plt.ylabel('Portfolio Value ($)', fontsize=11)
         plt.grid(True)
-        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))  # Shorter date format
         plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-        plt.xticks(rotation=45)
+        plt.xticks(rotation=45, fontsize=9)
         
         # Daily returns chart
         plt.subplot(3, 2, 2)
         plt.plot(dates, [r * 100 for r in returns], 'g-', alpha=0.7, linewidth=1, label='Gross Returns')
         plt.plot(dates, [r * 100 for r in net_returns], 'r-', linewidth=1, label='Net Returns (after costs)')
         
-        plt.title('Daily Returns', fontsize=15)
-        plt.ylabel('Return (%)', fontsize=12)
+        plt.title('Daily Returns', fontsize=14)
+        plt.ylabel('Return (%)', fontsize=11)
         plt.grid(True)
-        plt.legend()
-        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        plt.legend(fontsize=9)  # Smaller legend
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
         plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-        plt.xticks(rotation=45)
+        plt.xticks(rotation=45, fontsize=9)
         
-        # Portfolio weights over time
+        # Portfolio weights over time - SIMPLIFIED LEGEND
         plt.subplot(3, 2, 3)
         weights_array = np.array(weights_history)
         
-        for i in range(weights_array.shape[1]):
-            plt.plot(dates, weights_array[:, i], label=f'Stock {i+1}', alpha=0.8)
+        # Only show first 5 stocks to avoid legend clutter
+        for i in range(min(5, weights_array.shape[1])):
+            plt.plot(dates, weights_array[:, i], label=f'S{i+1}', alpha=0.8)
         
-        plt.title('Portfolio Weights Over Time', fontsize=15)
-        plt.ylabel('Weight', fontsize=12)
+        plt.title('Portfolio Weights (Top 5)', fontsize=14)
+        plt.ylabel('Weight', fontsize=11)
         plt.grid(True)
-        plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
-        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        plt.legend(fontsize=8, loc='upper right')  # Smaller legend, better position
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
         plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-        plt.xticks(rotation=45)
+        plt.xticks(rotation=45, fontsize=9)
         
         # Portfolio concentration over time
         plt.subplot(3, 2, 4)
         concentration = [np.sum(w**2) for w in weights_array]
         plt.plot(dates, concentration, 'purple', linewidth=2)
-        plt.title('Portfolio Concentration (Herfindahl Index)', fontsize=15)
-        plt.ylabel('Concentration', fontsize=12)
+        plt.title('Portfolio Concentration', fontsize=14)
+        plt.ylabel('Concentration', fontsize=11)
         plt.grid(True)
-        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
         plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-        plt.xticks(rotation=45)
+        plt.xticks(rotation=45, fontsize=9)
         
         # Average weights distribution
         plt.subplot(3, 2, 5)
@@ -364,34 +365,38 @@ def create_performance_charts(dates, portfolio_values, returns, net_returns, wei
         colors = ['red' if w < 0 else 'green' for w in avg_weights]
         
         bars = plt.bar(stock_labels, avg_weights, color=colors, alpha=0.7)
-        plt.title('Average Portfolio Weights', fontsize=15)
-        plt.ylabel('Average Weight', fontsize=12)
+        plt.title('Average Portfolio Weights', fontsize=14)
+        plt.ylabel('Average Weight', fontsize=11)
         plt.grid(True, axis='y')
         plt.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
+        plt.xticks(fontsize=9)
         
-        # Add value labels on bars
+        # Add value labels on bars - SMALLER TEXT
         for bar, weight in zip(bars, avg_weights):
             plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + (0.01 if weight > 0 else -0.01),
-                    f'{weight:.3f}', ha='center', va='bottom' if weight > 0 else 'top', fontsize=10)
+                    f'{weight:.2f}', ha='center', va='bottom' if weight > 0 else 'top', fontsize=8)
         
         # Weights volatility
         plt.subplot(3, 2, 6)
         weight_stds = np.std(weights_array, axis=0)
         plt.bar(stock_labels, weight_stds, color='orange', alpha=0.7)
-        plt.title('Portfolio Weights Volatility', fontsize=15)
-        plt.ylabel('Standard Deviation', fontsize=12)
+        plt.title('Portfolio Weights Volatility', fontsize=14)
+        plt.ylabel('Standard Deviation', fontsize=11)
         plt.grid(True, axis='y')
+        plt.xticks(fontsize=9)
         
-        # Add value labels on bars
+        # Add value labels on bars - SMALLER TEXT
         for i, std in enumerate(weight_stds):
-            plt.text(i, std + 0.001, f'{std:.3f}', ha='center', va='bottom', fontsize=10)
+            plt.text(i, std + 0.001, f'{std:.3f}', ha='center', va='bottom', fontsize=8)
         
-        plt.tight_layout()
+        # IMPROVED LAYOUT WITH MANUAL SPACING (avoids tight_layout warnings)
+        plt.subplots_adjust(left=0.08, bottom=0.12, right=0.95, top=0.93, wspace=0.3, hspace=0.5)
+        
         plt.savefig('portfolio_performance.png', dpi=100, bbox_inches='tight')
         plt.close()  # Close figure to free memory
         
-        # Separate detailed weights chart
-        plt.figure(figsize=(16, 10))
+        # Separate detailed weights chart - IMPROVED LAYOUT
+        plt.figure(figsize=(18, 12))  # Larger figure
         
         # Individual stock weights over time (larger view)
         plt.subplot(2, 1, 1)
@@ -401,11 +406,11 @@ def create_performance_charts(dates, portfolio_values, returns, net_returns, wei
         plt.title('Detailed Portfolio Weights Over Time', fontsize=16)
         plt.ylabel('Weight', fontsize=14)
         plt.grid(True, alpha=0.3)
-        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        plt.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)  # Move legend outside
         plt.axhline(y=0, color='black', linestyle='-', linewidth=1, alpha=0.5)
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
         plt.gca().xaxis.set_major_locator(mdates.WeekdayLocator())
-        plt.xticks(rotation=45)
+        plt.xticks(rotation=45, fontsize=10)
         
         # Portfolio statistics over time
         plt.subplot(2, 1, 2)
@@ -442,12 +447,14 @@ def create_performance_charts(dates, portfolio_values, returns, net_returns, wei
         plt.title('Portfolio Risk Metrics Over Time', fontsize=16)
         plt.ylabel('Metric Value', fontsize=14)
         plt.grid(True, alpha=0.3)
-        plt.legend()
+        plt.legend(fontsize=11)
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
         plt.gca().xaxis.set_major_locator(mdates.WeekdayLocator())
-        plt.xticks(rotation=45)
+        plt.xticks(rotation=45, fontsize=10)
         
-        plt.tight_layout()
+        # IMPROVED LAYOUT WITH PROPER SPACING (avoids tight_layout warnings)
+        plt.subplots_adjust(left=0.08, bottom=0.12, right=0.85, top=0.93, hspace=0.35)
+        
         plt.savefig('portfolio_weights.png', dpi=100, bbox_inches='tight')
         plt.close()  # Close figure to free memory
         
