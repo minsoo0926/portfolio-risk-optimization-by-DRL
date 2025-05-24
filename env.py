@@ -113,6 +113,8 @@ class PortfolioEnv(gym.Env):
             
         except Exception as e:
             logger.error(f"Error creating state at step {self.current_step}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             # Return a safe fallback state
             return np.zeros(52, dtype=np.float32)
 
@@ -164,7 +166,9 @@ class PortfolioEnv(gym.Env):
                         stock_returns = np.nan_to_num(stock_returns, nan=0.0, posinf=0.01, neginf=-0.01)
                 except Exception as e:
                     logger.error(f"Error accessing stock returns: {e}")
-                    stock_returns = np.zeros(len(returns_indices), dtype=np.float32)
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    stock_returns = np.zeros(10, dtype=np.float32)
                 
                 # Get volatility indices
                 vol_indices = np.arange(2, 40, 4)
@@ -178,7 +182,9 @@ class PortfolioEnv(gym.Env):
                         stock_vols = np.nan_to_num(stock_vols, nan=0.01, posinf=0.05, neginf=0.01)
                 except Exception as e:
                     logger.error(f"Error accessing stock volatilities: {e}")
-                    stock_vols = np.ones(len(vol_indices), dtype=np.float32) * 0.01  # Default volatility of 1%
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    stock_vols = np.ones(10, dtype=np.float32) * 0.01  # Default volatility of 1%
                 
                 # Ensure weights and returns have same shape
                 if len(weights) != len(stock_returns):

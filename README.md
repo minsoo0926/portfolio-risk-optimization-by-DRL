@@ -1,67 +1,112 @@
-# Portfolio Risk Optimization Using Deep Reinforcement Learning
+# Portfolio Risk Optimization using Deep Reinforcement Learning
 
-A Deep Reinforcement Learning (DRL) model for portfolio risk optimization. This project utilizes stock market data to learn optimal portfolio weights, maximizing risk-adjusted returns by considering returns, volatility, and transaction costs.
+A portfolio optimization system using Deep Reinforcement Learning (DRL) with PPO algorithm, featuring a web interface for training and evaluation.
 
-## Key Features
+## Architecture
 
-- **Proximal Policy Optimization (PPO)** algorithm for deep reinforcement learning
-- Web interface for training and evaluation control
-- Real-time learning progress monitoring
-- Robustness evaluation across various market conditions
-- Portfolio performance and weight visualization
+- **`train.py`** - Pure training script (no server conflicts)
+- **`evaluation.py`** - Standalone evaluation module
+- **`env.py`** - Portfolio environment with robust error handling
+- **`models.py`** - Custom PPO policy models
+- **`generate_scenario.py`** - Market data generation with fallbacks
+- **`app/`** - Web application components
+  - **`server.py`** - Main web server implementation
+  - **`templates.py`** - HTML templates
+  - **`utils.py`** - Logging and utility functions
 
-## Installation
+## Quick Start
 
-```bash
-# Clone repository
-git clone https://github.com/yourusername/portfolio-risk-optimization-by-DRL.git
-cd portfolio-risk-optimization-by-DRL
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-## Usage
-
-### Launch Web Interface
-
+### 1. Start the Web Server
 ```bash
 python app/server.py
 ```
+Then open http://localhost:8000 in your browser.
 
-Access the following features via web browser at http://localhost:8000:
+### 2. Use the Web Interface
+- **Start Infinite Training**: Begins continuous training cycles
+- **Evaluate Model**: Tests trained model and generates charts
+- **Stop Task**: Halts current operation
 
-1. **Train Model**: Click "Train Model" to start DRL model training
-2. **Evaluate Model**: Click "Evaluate Model" to assess trained model performance
-3. **Stop Task**: Terminate currently running tasks
-4. **Real-time Logs**: Monitor training and evaluation processes in real-time
-5. **Result Visualization**: View portfolio performance and weight visualizations after evaluation
+### 3. Manual Training (Optional)
+```bash
+python train.py
+```
 
-## Model Architecture
+### 4. Manual Evaluation (Optional)
+```bash
+python evaluation.py
+```
 
-- **State Space**: 52-dimensional (daily returns, moving average returns, volatility, relative volume, macro indicators, and previous actions for 10 stocks)
-- **Action Space**: 10-dimensional continuous (portfolio weights for each stock)
-- **Reward Function**: Portfolio return - volatility penalty - transaction cost penalty
+## Key Improvements
 
-## Experimental Results
+### **✅ Server Conflict Resolution**
+- **No Dual Servers**: Clean separation between web server and training
+- **Pure Training Script**: `train.py` no longer starts its own server
+- **Subprocess Execution**: Web interface runs training as isolated subprocess
 
-The model demonstrates stable performance across various market conditions, especially excelling in risk-adjusted returns (Sharpe Ratio).
+### **✅ Dimension Error Fixes**
+- **Robust State Construction**: Auto-padding/truncating to ensure 52-dimensional state
+- **Safe Data Access**: Bounds checking prevents index out of range errors
+- **NaN/Inf Handling**: Automatic cleaning of invalid data values
+- **Fallback Data**: Dummy data generation when real data fails
 
-## Project Structure
+### **✅ Evaluation Issues Fixed**
+- **Removed Intermediate Evaluations**: No more evaluation during training cycles
+- **Optional Final Evaluation**: Can be disabled to prevent dimension conflicts
+- **Conflict-Free Evaluation**: Standalone evaluation runs safely alongside training
+- **Robust Error Handling**: Graceful failure recovery
 
-- `app/` - Web application and server code
-  - `server.py` - FastAPI server implementation
-  - `templates.py` - Web interface HTML templates
-  - `utils.py` - Web application utility functions
-- `data/` - Financial time series data
-  - `derived/` - Processed data files
-  - `price/` - Stock price data
-  - `train_set/` - Training datasets
-- `debug/` - Debugging utilities and logs
-- `logs/` - Application logs
-- `save/` - Saved model checkpoints
-- `static/` - Static files for web interface (images, etc.)
-- `train.py` - Model training script
-- `evaluation.py` - Model evaluation script
-- `main.py` - Core functions and model implementation
-- `requirements.txt` - Python dependencies
+### **✅ Performance Optimizations**
+- **Reduced Evaluation Frequency**: Less frequent callbacks for stability
+- **Memory Management**: Better cleanup and resource management
+- **Safe Model Loading**: File locking prevents concurrent access issues
+- **Improved Logging**: Cleaner output with appropriate log levels
+
+## Architecture Benefits
+
+1. **No Server Conflicts**: Web server and training run independently
+2. **Stable Training**: Removed problematic intermediate evaluations
+3. **Robust Data Handling**: Automatic error recovery and fallbacks
+4. **Clean Separation**: Each module has single responsibility
+5. **Production Ready**: Proper error handling and logging
+
+## Training Features
+
+- **Infinite Loop Training**: Continuous training cycles via web interface
+- **Multiple Environments**: Trains on diverse market scenarios
+- **Model Checkpointing**: Saves best performing models
+- **Real-time Monitoring**: Live logs and metrics
+- **Early Stopping**: Prevents overfitting (when evaluations enabled)
+
+## Evaluation Features
+
+- **Safe Execution**: Runs independently without conflicting with training
+- **Performance Metrics**: Sharpe ratio, max drawdown, returns
+- **Visualizations**: Portfolio value and weights charts
+- **Transaction Costs**: Realistic cost modeling
+
+## File Structure
+
+```
+├── app/
+│   ├── server.py          # Web server implementation  
+│   ├── templates.py       # HTML templates
+│   └── utils.py           # Logging and utilities
+├── train.py               # Pure training script
+├── evaluation.py          # Standalone evaluation
+├── env.py                 # Robust portfolio environment
+├── models.py              # Custom PPO models
+├── generate_scenario.py   # Data generation with fallbacks
+├── data/                  # Market data
+├── logs/                  # Log files
+├── static/                # Web assets
+└── temp/                  # Temporary model files
+```
+
+## Usage Notes
+
+- **Start Server First**: Always start the web server before using the web interface
+- **Independent Operations**: Training and evaluation can run independently
+- **Error Recovery**: System automatically handles data and dimension errors
+- **Model Persistence**: Models are saved regularly during training
+- **Safe Stopping**: Tasks can be safely stopped without corruption

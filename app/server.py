@@ -74,63 +74,102 @@ def run_training():
     
     is_training = True
     logger.info("="*50)
-    logger.info("Starting portfolio optimization training")
+    logger.info("Starting infinite portfolio optimization training")
     logger.info("="*50)
     
     try:
-        # 무한 루프로 학습을 실행하는 함수
+        # Infinite loop training function
         def continuous_training():
             global current_process, is_training
+            cycle_count = 0
+            
             try:
                 while is_training:
-                    # 학습 프로세스 실행
+                    cycle_count += 1
+                    logger.info(f"Starting training cycle #{cycle_count}")
+                    
+                    # Run training process
                     process = subprocess.Popen(
-                        ["python", "-c", "from train import main; main()"],
+                        ["python", "train.py"],  # Direct execution of train.py
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
                         bufsize=1,
+                        universal_newlines=True,
                         env=os.environ.copy()
                     )
                     
-                    # 현재 프로세스 업데이트
+                    # Update current process
                     current_process = process
                     
-                    # 출력 로깅
-                    for line in iter(process.stdout.readline, ''):
-                        if line and is_training:
-                            logger.info(line.strip())
+                    # Stream output in real-time
+                    try:
+                        for line in iter(process.stdout.readline, ''):
+                            if not line:
+                                break
+                            if is_training:  # Check if still training
+                                logger.info(line.strip())
+                            else:
+                                break
+                    except Exception as e:
+                        logger.error(f"Error reading process output: {e}")
                     
-                    # 프로세스 완료 확인
-                    if process.poll() is not None:
-                        if process.returncode == 0:
-                            logger.info("Training cycle completed successfully")
+                    # Wait for process completion
+                    try:
+                        return_code = process.wait(timeout=30)  # 30 second timeout for cleanup
+                        
+                        if return_code == 0:
+                            logger.info(f"Training cycle #{cycle_count} completed successfully")
                         else:
-                            logger.error(f"Training cycle failed: exit code {process.returncode}")
+                            logger.error(f"Training cycle #{cycle_count} failed with exit code {return_code}")
+                            
+                    except subprocess.TimeoutExpired:
+                        logger.warning("Process cleanup timeout, forcing termination")
+                        try:
+                            process.kill()
+                            process.wait()
+                        except:
+                            pass
                     
-                    # 다음 학습 사이클 전에 60초 대기
-                    logger.info("Waiting 60 seconds before starting next training cycle...")
-                    time.sleep(60)
+                    # Check if training should continue
+                    if not is_training:
+                        logger.info("Training stopped by user")
+                        break
                     
-                    # 학습이 중지되었는지 확인
+                    # Wait before next cycle
+                    logger.info("Waiting 30 seconds before starting next training cycle...")
+                    for i in range(30):
+                        if not is_training:
+                            logger.info("Training stopped during wait period")
+                            break
+                        time.sleep(1)
+                    
                     if not is_training:
                         break
                 
+                logger.info(f"Infinite training completed after {cycle_count} cycles")
+                
             except Exception as e:
                 logger.error(f"Error in continuous training: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+            finally:
+                # Clean up
                 current_process = None
                 is_training = False
+                logger.info("Training process cleanup completed")
         
-        # 무한 학습 스레드 시작
-        training_thread = threading.Thread(target=continuous_training)
-        training_thread.daemon = True
+        # Start infinite training thread
+        training_thread = threading.Thread(target=continuous_training, daemon=True)
         training_thread.start()
         
-        # 즉시 반환하여 백그라운드에서 실행
-        return {"status": "success", "message": "Continuous training started."}
+        # Return immediately to allow background execution
+        return {"status": "success", "message": "Infinite training started in background."}
         
     except Exception as e:
-        logger.error(f"Error starting training: {str(e)}")
+        logger.error(f"Error starting infinite training: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         current_process = None
         is_training = False
         return {"status": "error", "message": f"Error starting training: {str(e)}"}
@@ -312,47 +351,68 @@ def generate_portfolio_charts():
 def stop_current_process():
     global current_process, is_training, is_evaluating
     
-    if current_process is None:
+    if not is_training and not is_evaluating:
         logger.warning("No tasks are currently running.")
-        is_training = False
-        is_evaluating = False
-        return {"status": "error", "message": "No tasks are currently running."}
+        return {"status": "success", "message": "No tasks are currently running."}
     
     try:
-        # Save current process reference
-        proc = current_process
+        logger.info("Stopping current task...")
         
-        # Reset global variables first
-        current_process = None
+        # Set stop flags first
+        was_training = is_training
+        was_evaluating = is_evaluating
         is_training = False
         is_evaluating = False
         
-        # Try to terminate process
-        try:
-            proc.terminate()
-            time.sleep(0.5)
-            
-            # Check if process is still alive
-            if proc.poll() is None:
-                # Force kill if needed
-                try:
-                    proc.kill()
-                    proc.wait(timeout=2)
-                except:
-                    pass
-        except:
-            # Ignore errors if already terminated
-            pass
+        # Get current process reference
+        proc = current_process
         
-        logger.info("Task stopped.")
-        return {"status": "success", "message": "Task stopped."}
+        if proc is not None:
+            try:
+                # First, try graceful termination
+                logger.info("Sending termination signal to process...")
+                proc.terminate()
+                
+                # Wait for graceful shutdown
+                try:
+                    proc.wait(timeout=5)
+                    logger.info("Process terminated gracefully")
+                except subprocess.TimeoutExpired:
+                    # Force kill if graceful termination fails
+                    logger.warning("Process did not terminate gracefully, forcing kill...")
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=3)
+                        logger.info("Process force killed")
+                    except subprocess.TimeoutExpired:
+                        logger.error("Could not kill process")
+                        
+            except Exception as e:
+                logger.error(f"Error terminating process: {e}")
+        
+        # Clean up process reference
+        current_process = None
+        
+        # Log what was stopped
+        if was_training:
+            logger.info("Infinite training loop stopped successfully")
+            return {"status": "success", "message": "Infinite training stopped."}
+        elif was_evaluating:
+            logger.info("Model evaluation stopped successfully")
+            return {"status": "success", "message": "Model evaluation stopped."}
+        else:
+            return {"status": "success", "message": "Task stopped."}
         
     except Exception as e:
         logger.error(f"Error stopping task: {str(e)}")
-        # Reset state even on error
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        # Ensure cleanup even on error
         current_process = None
         is_training = False
         is_evaluating = False
+        
         return {"status": "error", "message": f"Error stopping task: {str(e)}"}
 
 # API endpoints
@@ -369,15 +429,38 @@ async def get_status():
 
 @router.post("/api/train")
 async def train_model(background_tasks: BackgroundTasks):
+    global is_training, is_evaluating
+    
     if is_training or is_evaluating:
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Another task is already running."}
         )
     
-    # Run training as background task
-    background_tasks.add_task(run_training)
-    return {"status": "success", "message": "Training started."}
+    logger.info("Received request to start infinite training")
+    
+    try:
+        # Start infinite training
+        result = run_training()
+        
+        if result["status"] == "success":
+            logger.info("Infinite training started successfully")
+            return {"status": "success", "message": "Infinite training started. Use STOP button to halt."}
+        else:
+            logger.error(f"Failed to start training: {result['message']}")
+            return JSONResponse(
+                status_code=500,
+                content=result
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in train API: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"Internal server error: {str(e)}"}
+        )
 
 @router.post("/api/evaluate")
 async def evaluate_model(background_tasks: BackgroundTasks):

@@ -181,12 +181,16 @@ HTML_TEMPLATE = """
             <h2>Control Panel</h2>
             
             <div class="button-group">
-                <button id="trainButton" class="train-btn">Train Model</button>
+                <button id="trainButton" class="train-btn">Start Infinite Training</button>
                 <button id="evaluateButton" class="evaluate-btn">Evaluate Model</button>
                 <button id="stopButton" class="stop-btn" disabled>Stop Task</button>
             </div>
             
             <div id="status" class="idle">Status: Ready</div>
+            
+            <div class="training-info" style="background: #e8f4f8; padding: 10px; border-radius: 4px; margin: 10px 0; border-left: 4px solid #2196F3;">
+                <strong>ℹ️ Training Mode:</strong> Training runs in continuous cycles. Each cycle completes a full training session, then automatically starts the next cycle after a brief pause. Use the <strong>STOP</strong> button to halt the infinite loop.
+            </div>
             
             <div id="metrics-container">
                 <h3>Metrics <span id="metricsLoader" class="loader hidden"></span></h3>
@@ -245,27 +249,19 @@ HTML_TEMPLATE = """
             evaluateButton.disabled = running;
             stopButton.disabled = !running;
             
-            const infiniteMsg = document.getElementById('infiniteMsg');
             if (running) {
                 statusDiv.className = 'running';
-                statusDiv.textContent = 'Status: Running...';
-                metricsLoader.classList.remove('hidden');
-                if (!infiniteMsg) {
-                    const msg = document.createElement('div');
-                    msg.id = 'infiniteMsg';
-                    msg.style.color = 'red';
-                    msg.style.fontWeight = 'bold';
-                    msg.style.margin = '10px 0';
-                    msg.textContent = 'Training is running in infinite loop... Click STOP to halt.';
-                    statusDiv.parentNode.insertBefore(msg, statusDiv.nextSibling);
+                if (currentOperation.textContent === "Model Training") {
+                    statusDiv.textContent = 'Status: Infinite Training Running...';
+                } else {
+                    statusDiv.textContent = 'Status: Running...';
                 }
+                metricsLoader.classList.remove('hidden');
             } else {
                 statusDiv.className = 'idle';
                 statusDiv.textContent = 'Status: Ready';
                 metricsLoader.classList.add('hidden');
-                if (infiniteMsg) {
-                    infiniteMsg.remove();
-                }
+                currentOperation.textContent = '-';
             }
         }
         
@@ -277,9 +273,15 @@ HTML_TEMPLATE = """
             logContainer.innerHTML = '';
             resultsPanel.classList.add('hidden');
             
+            // Add initial message about infinite training
+            const initMsg = document.createElement('div');
+            initMsg.classList.add('log-INFO');
+            initMsg.innerHTML = '<span class="log-timestamp">' + new Date().toLocaleTimeString() + '</span>Starting infinite training mode...';
+            logContainer.appendChild(initMsg);
+            
             try {
                 updateButtonState(true);
-                currentOperation.textContent = "Model Training";
+                currentOperation.textContent = "Model Training (Infinite Loop)";
                 
                 const response = await fetch('/api/train', {
                     method: 'POST',
@@ -287,7 +289,11 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 
                 if (data.status === 'success') {
-                    console.log('Training started');
+                    console.log('Infinite training started');
+                    const successMsg = document.createElement('div');
+                    successMsg.classList.add('log-SUCCESS');
+                    successMsg.innerHTML = '<span class="log-timestamp">' + new Date().toLocaleTimeString() + '</span>Infinite training started successfully. Training will run continuously until stopped.';
+                    logContainer.appendChild(successMsg);
                 } else {
                     showError('Failed to start training: ' + data.message);
                     updateButtonState(false);
@@ -420,6 +426,11 @@ HTML_TEMPLATE = """
                 if (stepMatch) {
                     currentStep.textContent = stepMatch[1];
                 }
+            } else if (data.message.includes('Training cycle #')) {
+                const cycleMatch = data.message.match(/Training cycle #(\d+)/);
+                if (cycleMatch) {
+                    currentStep.textContent = `Cycle ${cycleMatch[1]}`;
+                }
             } else if (data.message.includes('Total Return:') || data.message.includes('Total return:')) {
                 const returnMatch = data.message.match(/Total [Rr]eturn: ([\d.-]+)%/);
                 if (returnMatch) {
@@ -430,6 +441,15 @@ HTML_TEMPLATE = """
                 if (sharpeMatch) {
                     lastSharpe.textContent = sharpeMatch[1];
                 }
+            } else if (data.message.includes('cycle completed successfully')) {
+                // Highlight successful cycle completion
+                logEntry.style.backgroundColor = '#d4edda';
+                logEntry.style.color = '#155724';
+                logEntry.style.fontWeight = 'bold';
+            } else if (data.message.includes('Waiting') && data.message.includes('next training cycle')) {
+                // Highlight wait periods
+                logEntry.style.backgroundColor = '#fff3cd';
+                logEntry.style.color = '#856404';
             } else if (data.message.includes('chart') || 
                        data.message.includes('image') || 
                        data.message.includes('UI update')) {
@@ -445,10 +465,11 @@ HTML_TEMPLATE = """
                 }, 1000);
             }
             
-            // Update status
+            // Update status for infinite training
             if (data.message.includes('Training completed') || 
                 data.message.includes('Model evaluation completed') ||
-                data.message.includes('execution failed')) {
+                data.message.includes('stopped successfully') ||
+                data.message.includes('Infinite training completed')) {
                 updateButtonState(false);
             }
         };
