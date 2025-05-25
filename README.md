@@ -16,11 +16,18 @@ A portfolio optimization system using Deep Reinforcement Learning (DRL) with PPO
 
 ## Quick Start
 
+### Prerequisites
+
+```bash
+python=3.11
+pip install -r requirements.txt
+```
+
 ### 1. Start the Web Server
 ```bash
-python app/server.py
+python main.py
 ```
-Then open http://localhost:8000 in your browser.
+Then open http://localhost:8080 in your browser.
 
 ### 2. Use the Web Interface
 - **Start Infinite Training**: Begins continuous training cycles
