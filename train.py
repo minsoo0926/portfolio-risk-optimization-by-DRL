@@ -86,6 +86,13 @@ def main():
         train_envs = [PortfolioEnv(seed=seed) for seed in train_seeds]
         logger.info(f"Environments created: {len(train_envs)} environments")
         
+        for i, env in enumerate(train_envs):
+            if np.isnan(env.state).any():
+                logger.error(f"NaN in state: {env.state}")
+                seed = np.random.randint(0, 10000)
+                train_envs[i] = PortfolioEnv(seed=seed)
+                logger.info(f"New seed: {seed}")
+        
         # Load existing model if available, otherwise create new one
         if os.path.exists(model_path + ".zip"):
             try:
