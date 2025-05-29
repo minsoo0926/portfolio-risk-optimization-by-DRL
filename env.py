@@ -270,20 +270,22 @@ class PortfolioEnv(gym.Env):
                 risk_penalty = 0.5 * portfolio_vol * 100  # Scale volatility penalty
                 transaction_penalty = 0.1 * turnover  # Reduce transaction cost penalty
                 
-                # 4. Add exploration bonus for diversification
-                diversification_bonus = 0.1 * (1.0 - np.max(np.abs(weights))) if len(weights) > 0 else 0.0
+                # # 4. Add exploration bonus for diversification
+                # diversification_bonus = 0.1 * (1.0 - np.max(np.abs(weights))) if len(weights) > 0 else 0.0
                 
-                # 5. Combine components with better scaling
-                base_reward = scaled_return - risk_penalty - transaction_penalty + diversification_bonus
+                # # 5. Combine components with better scaling
+                # base_reward = scaled_return - risk_penalty - transaction_penalty + diversification_bonus
+                reward = scaled_return - risk_penalty - transaction_penalty
+                # # 6. Add small cumulative performance bonus
+                # performance_bonus = 0.01 * max(0, self.cumulative_return * 100)  # Only positive cumulative returns
                 
-                # 6. Add small cumulative performance bonus
-                performance_bonus = 0.01 * max(0, self.cumulative_return * 100)  # Only positive cumulative returns
+                # # 7. Final reward with normalization
+                # reward = base_reward + performance_bonus
                 
-                # 7. Final reward with normalization
-                reward = base_reward + performance_bonus
+                # # 8. Clip reward to prevent extreme values
+                # reward = np.clip(reward, -10.0, 10.0)
                 
-                # 8. Clip reward to prevent extreme values
-                reward = np.clip(reward, -10.0, 10.0)
+                
                 
                 # Calculate new state
                 self.state = self._get_state()
